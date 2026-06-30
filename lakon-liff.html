@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>ละกอน 💧 สั่งน้ำ</title>
+
+  <!-- ⚠️ แก้ค่าด้านล่างก่อน deploy -->
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxAoMQFZ9rrvuH3utxvs0frRsNoCIe_wt2-SXz5b85RbWb-SaHhI04rUNxM8yIKTULIkQ/exec";
+    const LIFF_ID = "2010424359-CA9GPcdd";
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sky: #0EA5E9;
+      --sky-dark: #0284C7;
+      --sky-light: #E0F2FE;
+      --text: #111827;
+      --sub: #6B7280;
+      --border: #E5E7EB;
+      --bg: #F9FAFB;
+      --white: #FFFFFF;
+      --green: #22C55E;
+      --orange: #F59E0B;
+      --red: #EF4444;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: 'Sarabun', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Screens ── */
+    .screen { display: none; min-height: 100vh; flex-direction: column; }
+    .screen.active { display: flex; }
+
+    /* ── Header ── */
+    .header {
+      background: var(--sky);
+      color: var(--white);
+      padding: 16px 16px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 8px rgba(14,165,233,.25);
+    }
+    .header-title { font-size: 20px; font-weight: 700; }
+    .header-sub   { font-size: 13px; opacity: .85; margin-top: 2px; }
+    .header-btn {
+      background: rgba(255,255,255,.2);
+      border: none; color: var(--white);
+      font-family: 'Sarabun', sans-serif;
+      font-size: 13px; font-weight: 500;
+      padding: 6px 12px; border-radius: 20px;
+      cursor: pointer; white-space: nowrap;
+      transition: background .2s;
+    }
+    .header-btn:hover { background: rgba(255,255,255,.35); }
+
+    /* ── Forms ── */
+    .form-body  { padding: 20px 16px; flex: 1; overflow-y: auto; }
+    .form-group { margin-bottom: 16px; }
+    .form-label { font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 6px; display: block; }
+    .form-label span { color: var(--red); }
+    .form-input {
+      width: 100%;
+      border: 1.5px solid var(--border); border-radius: var(--radius);
+      padding: 12px 14px;
+      font-family: 'Sarabun', sans-serif; font-size: 15px; color: var(--text);
+      background: var(--white); outline: none;
+      transition: border-color .2s;
+    }
+    .form-input:focus { border-color: var(--sky); }
+    .form-input::placeholder { color: #C4C4C4; }
+    .form-footer { padding: 12px 16px 24px; }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      width: 100%; background: var(--sky); color: var(--white);
+      border: none; font-family: 'Sarabun', sans-serif;
+      font-size: 16px; font-weight: 700;
+      padding: 14px; border-radius: var(--radius);
+      cursor: pointer; transition: background .2s, opacity .2s;
+    }
+    .btn-primary:hover    { background: var(--sky-dark); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary {
+      width: 100%; background: var(--white); color: var(--sky);
+      border: 2px solid var(--sky);
+      font-family: 'Sarabun', sans-serif;
+      font-size: 15px; font-weight: 600;
+      padding: 12px; border-radius: var(--radius);
+      cursor: pointer; transition: background .2s;
+      margin-top: 10px;
+    }
+    .btn-secondary:hover { background: var(--sky-light); }
+
+    /* ── Screen 1: Loading ── */
+    #scLoading {
+      align-items: center; justify-content: center;
+      gap: 16px; background: var(--white);
+    }
+    .loading-emoji { font-size: 52px; animation: bounce 1.2s infinite; }
+    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--sky-light); border-top-color: var(--sky);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loadingText { font-size: 15px; color: var(--sub); text-align: center; max-width: 240px; }
+    #initError { display: none; text-align: center; padding: 0 24px; }
+    #initError p { color: var(--red); margin-bottom: 16px; font-size: 14px; }
+    .btn-retry {
+      background: var(--sky); color: var(--white); border: none;
+      font-family: 'Sarabun', sans-serif; font-size: 15px; font-weight: 600;
+      padding: 10px 28px; border-radius: var(--radius); cursor: pointer;
+    }
+
+    /* ── Screen 2: Register ── */
+    #scRegister { background: var(--bg); }
+    .info-box {
+      background: var(--sky-light); border-radius: var(--radius);
+      padding: 12px 14px; margin-bottom: 20px;
+      font-size: 13px; color: var(--sky-dark); line-height: 1.5;
+    }
+
+    /* ── Screen 3: Add Address ── */
+    #scAddAddress { background: var(--bg); }
+
+    /* GPS button */
+    .gps-row { display: flex; gap: 8px; }
+    .gps-row .form-input { flex: 1; }
+    .btn-gps {
+      background: var(--sky-light); border: 1.5px solid var(--sky);
+      border-radius: var(--radius); padding: 0 14px;
+      color: var(--sky-dark); font-size: 20px;
+      cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    .btn-gps:hover    { background: #BAE6FD; }
+    .btn-gps:disabled { opacity: .5; cursor: not-allowed; }
+    .gps-hint { font-size: 11px; color: var(--sub); margin-top: 4px; }
+
+    /* GPS link */
+    .gps-link {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; color: var(--sky-dark);
+      text-decoration: none; margin-top: 4px;
+    }
+    .gps-status { font-size: 12px; margin-top: 6px; }
+    .gps-status.ok  { color: var(--green); }
+    .gps-status.err { color: var(--red); }
+
+    /* ── Screen 4: Order ── */
+    #scOrder { background: var(--bg); }
+    .products-body { flex: 1; overflow-y: auto; padding: 12px 16px 130px; }
+
+    /* Address selector card */
+    .addr-selector {
+      background: var(--white); border-radius: var(--radius);
+      border: 1.5px solid var(--border);
+      padding: 12px 14px; margin-bottom: 14px;
+      display: flex; align-items: flex-start; gap: 10px;
+      cursor: pointer; transition: border-color .2s;
+    }
+    .addr-selector:hover { border-color: var(--sky); }
+    .addr-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+    .addr-info { flex: 1; min-width: 0; }
+    .addr-label  { font-size: 13px; font-weight: 700; color: var(--text); }
+    .addr-detail { font-size: 12px; color: var(--sub); margin-top: 2px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .addr-phone  { font-size: 12px; color: var(--sky-dark); margin-top: 2px; }
+    .addr-change { font-size: 12px; color: var(--sky); font-weight: 600; flex-shrink: 0; padding-top: 2px; }
+    .addr-gps-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: var(--sky-light); color: var(--sky-dark);
+      font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 10px; margin-top: 4px;
+      text-decoration: none;
+    }
+
+    /* No address warning */
+    .no-addr-warning {
+      background: #FEF3C7; border-radius: var(--radius);
+      padding: 12px 14px; margin-bottom: 14px;
+      font-size: 13px; color: #92400E;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Product cards */
+    .section-title { font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+    .product-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 14px 16px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .product-info { flex: 1; min-width: 0; }
+    .product-name  { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .product-meta  { font-size: 12px; color: var(--sub); margin-top: 2px; }
+    .product-price { font-size: 14px; font-weight: 700; color: var(--sky-dark); margin-top: 4px; }
+
+    /* Stepper */
+    .stepper { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .stepper-btn {
+      width: 32px; height: 32px;
+      background: var(--sky-light); color: var(--sky-dark);
+      border: none; border-radius: 50%; font-size: 18px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s; line-height: 1;
+    }
+    .stepper-btn:hover    { background: #BAE6FD; }
+    .stepper-btn:disabled { opacity: .35; cursor: default; }
+    .stepper-qty { font-size: 16px; font-weight: 700; min-width: 24px; text-align: center; }
+
+    /* Note */
+    .note-area  { background: var(--white); border-radius: var(--radius); padding: 14px 16px; margin-top: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .note-input { width: 100%; border: 1.5px solid var(--border); border-radius: 8px; padding: 10px 12px; font-family: 'Sarabun', sans-serif; font-size: 14px; color: var(--text); resize: none; outline: none; transition: border-color .2s; }
+    .note-input:focus { border-color: var(--sky); }
+
+    /* Summary bar */
+    .summary-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--white); border-top: 1.5px solid var(--border);
+      padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      display: flex; align-items: center; gap: 12px;
+      z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,.08);
+    }
+    .summary-info  { flex: 1; }
+    .summary-count { font-size: 13px; color: var(--sub); }
+    .summary-total { font-size: 18px; font-weight: 700; }
+    .btn-order {
+      background: var(--sky); color: var(--white); border: none;
+      font-family: 'Sarabun', sans-serif; font-size: 15px; font-weight: 700;
+      padding: 12px 22px; border-radius: var(--radius);
+      cursor: pointer; white-space: nowrap; transition: background .2s, opacity .2s;
+    }
+    .btn-order:hover    { background: var(--sky-dark); }
+    .btn-order:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ── Screen 5: Address List Modal ── */
+    #scAddressList { background: var(--bg); }
+    .addr-list-body { flex: 1; overflow-y: auto; padding: 12px 16px 24px; }
+    .addr-list-card {
+      background: var(--white); border-radius: var(--radius);
+      border: 1.5px solid var(--border);
+      padding: 14px 16px; margin-bottom: 10px;
+      display: flex; gap: 12px; align-items: flex-start;
+      transition: border-color .2s;
+    }
+    .addr-list-card.selected { border-color: var(--sky); }
+    .addr-list-card-info { flex: 1; min-width: 0; }
+    .addr-list-label { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .default-chip {
+      font-size: 10px; font-weight: 700; background: var(--sky); color: var(--white);
+      padding: 1px 7px; border-radius: 10px;
+    }
+    .addr-list-detail { font-size: 13px; color: var(--sub); margin-top: 4px; line-height: 1.4; }
+    .addr-list-phone  { font-size: 12px; color: var(--sky-dark); margin-top: 4px; }
+    .addr-list-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+    .btn-select-addr {
+      background: var(--sky); color: var(--white); border: none;
+      font-family: 'Sarabun', sans-serif; font-size: 13px; font-weight: 600;
+      padding: 6px 14px; border-radius: 20px; cursor: pointer; white-space: nowrap;
+    }
+    .btn-set-default {
+      background: none; border: none; color: var(--sub);
+      font-family: 'Sarabun', sans-serif; font-size: 12px;
+      cursor: pointer; padding: 2px 4px; white-space: nowrap;
+    }
+    .btn-set-default:hover { color: var(--sky); }
+    .add-addr-btn-row { padding: 0 16px 16px; }
+
+    /* ── Screen 6: History ── */
+    #scHistory { background: var(--bg); }
+    .history-body { flex: 1; overflow-y: auto; padding: 12px 16px 24px; }
+    .order-card { background: var(--white); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .order-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .order-id   { font-size: 14px; font-weight: 700; }
+    .order-date { font-size: 12px; color: var(--sub); margin-top: 2px; }
+    .order-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
+    .badge-pending   { background: #FEF3C7; color: #92400E; }
+    .badge-confirmed { background: #D1FAE5; color: #065F46; }
+    .badge-delivered { background: #DBEAFE; color: #1E40AF; }
+    .badge-cancelled { background: #FEE2E2; color: #991B1B; }
+    .badge-unpaid    { background: #FEE2E2; color: #991B1B; }
+    .badge-paid      { background: #D1FAE5; color: #065F46; }
+    .order-divider   { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .order-item      { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; color: var(--sub); }
+    .order-item-name { flex: 1; }
+    .order-item-amt  { font-weight: 600; color: var(--text); }
+    .order-total     { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin-top: 8px; }
+    .order-addr-chip { font-size: 11px; color: var(--sub); margin-top: 6px; }
+    .empty-state { text-align: center; padding: 60px 24px; color: var(--sub); }
+    .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* ── Screen 7: Success ── */
+    #scSuccess {
+      align-items: center; justify-content: center;
+      background: var(--white); padding: 24px;
+    }
+    .success-icon  { font-size: 64px; margin-bottom: 16px; }
+    .success-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; text-align: center; }
+    .success-sub   { font-size: 14px; color: var(--sub); margin-bottom: 24px; text-align: center; }
+    .success-card  { width: 100%; max-width: 360px; background: var(--bg); border-radius: var(--radius); padding: 16px; margin-bottom: 24px; }
+    .success-order-id  { font-size: 13px; color: var(--sub); }
+    .success-order-val { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+    .success-item      { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; color: var(--sub); }
+    .success-grand     { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .success-grand-amt { color: var(--sky-dark); }
+    .success-addr      { font-size: 12px; color: var(--sub); margin-top: 10px; line-height: 1.4; }
+    .btn-reorder {
+      width: 100%; max-width: 360px; background: var(--sky); color: var(--white);
+      border: none; font-family: 'Sarabun', sans-serif; font-size: 16px; font-weight: 700;
+      padding: 14px; border-radius: var(--radius); cursor: pointer;
+    }
+    .btn-reorder:hover { background: var(--sky-dark); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 90px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1F2937; color: var(--white);
+      font-size: 14px; padding: 10px 20px; border-radius: 24px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .3s, transform .3s;
+      z-index: 9999; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- ══ Screen 1: Loading ══ -->
+<div id="scLoading" class="screen active">
+  <div class="loading-emoji">💧</div>
+  <div class="spinner"></div>
+  <p id="loadingText">กำลังเริ่มต้น...</p>
+  <div id="initError">
+    <p id="initErrorMsg">เกิดข้อผิดพลาด</p>
+    <button class="btn-retry" onclick="location.reload()">ลองใหม่</button>
+  </div>
+</div>
+
+<!-- ══ Screen 2: Register ══ -->
+<div id="scRegister" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title">ละกอน 💧</div>
+      <div class="header-sub">สมัครสมาชิก</div>
+    </div>
+  </div>
+  <div class="form-body">
+    <div class="info-box">💧 ระบบสั่งน้ำดื่มละกอน<br>กรอกข้อมูลเพื่อเริ่มสั่งสินค้า</div>
+    <div class="form-group">
+      <label class="form-label">ชื่อบริษัท / ร้านค้า <span>*</span></label>
+      <input id="regCompany" type="text" class="form-input" placeholder="เช่น บจก.ดีมาก หรือ ร้านสะดวกซื้อ" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">ชื่อผู้ติดต่อ <span>*</span></label>
+      <input id="regContact" type="text" class="form-input" placeholder="ชื่อ-นามสกุล" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">เบอร์โทรศัพท์หลัก <span>*</span></label>
+      <input id="regPhone" type="tel" class="form-input" placeholder="0XX-XXX-XXXX" />
+    </div>
+  </div>
+  <div class="form-footer">
+    <button id="btnRegister" class="btn-primary" onclick="submitRegister()">ถัดไป → เพิ่มที่อยู่จัดส่ง</button>
+  </div>
+</div>
+
+<!-- ══ Screen 3: Add Address ══ -->
+<div id="scAddAddress" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title">ละกอน 💧</div>
+      <div class="header-sub" id="addAddrSubtitle">เพิ่มที่อยู่จัดส่ง</div>
+    </div>
+    <button class="header-btn" id="btnSkipAddr" onclick="skipAddAddress()" style="display:none">ข้าม</button>
+  </div>
+  <div class="form-body">
+    <div class="form-group">
+      <label class="form-label">ชื่อที่อยู่ / ป้ายกำกับ <span>*</span></label>
+      <input id="addrLabel" type="text" class="form-input" placeholder="เช่น สาขาหลัก, โกดัง, บ้าน" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">ที่อยู่จัดส่ง <span>*</span></label>
+      <textarea id="addrDetail" class="form-input note-input" rows="3"
+        placeholder="บ้านเลขที่ ซอย ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">ตำแหน่ง GPS</label>
+      <div class="gps-row">
+        <input id="addrGpsDisplay" type="text" class="form-input" placeholder="กด 📍 เพื่อเก็บตำแหน่ง" readonly />
+        <button class="btn-gps" id="btnGetGps" onclick="captureGPS()" title="เก็บตำแหน่ง GPS">📍</button>
+      </div>
+      <div class="gps-status" id="gpsStatus"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">เบอร์โทรสำรอง (ถ้ามี)</label>
+      <input id="addrPhoneBackup" type="tel" class="form-input" placeholder="เบอร์ติดต่อ ณ สถานที่นี้" />
+    </div>
+  </div>
+  <div class="form-footer">
+    <button id="btnSaveAddr" class="btn-primary" onclick="submitAddress()">บันทึกที่อยู่</button>
+  </div>
+</div>
+
+<!-- ══ Screen 4: Order ══ -->
+<div id="scOrder" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title" id="orderCompanyName">ละกอน 💧</div>
+      <div class="header-sub">สั่งสินค้า</div>
+    </div>
+    <button class="header-btn" onclick="showScreen('scHistory'); loadHistory()">ประวัติ 📋</button>
+  </div>
+  <div class="products-body">
+
+    <!-- Address selector -->
+    <div id="addrSelectorWrap"></div>
+
+    <p class="section-title">สินค้าละกอน</p>
+    <div id="productList">
+      <div style="text-align:center;padding:40px;color:var(--sub)">กำลังโหลดสินค้า...</div>
+    </div>
+
+    <div style="margin-top:20px">
+      <p class="section-title">หมายเหตุ (ถ้ามี)</p>
+      <div class="note-area">
+        <textarea id="orderNote" class="note-input" rows="2"
+          placeholder="เช่น ส่งก่อนบ่าย, ฝากไว้ที่แผนก..."></textarea>
+      </div>
+    </div>
+  </div>
+  <div class="summary-bar">
+    <div class="summary-info">
+      <div class="summary-count" id="summaryCount">0 รายการ</div>
+      <div class="summary-total" id="summaryTotal">฿0</div>
+    </div>
+    <button id="btnPlaceOrder" class="btn-order" disabled onclick="confirmOrder()">สั่งซื้อ →</button>
+  </div>
+</div>
+
+<!-- ══ Screen 5: Address List ══ -->
+<div id="scAddressList" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title">ที่อยู่จัดส่ง</div>
+    </div>
+    <button class="header-btn" onclick="showScreen('scOrder')">← กลับ</button>
+  </div>
+  <div class="addr-list-body" id="addrListBody">
+    <div style="text-align:center;padding:40px;color:var(--sub)">กำลังโหลด...</div>
+  </div>
+  <div class="add-addr-btn-row">
+    <button class="btn-secondary" onclick="openAddAddress(false)">+ เพิ่มที่อยู่ใหม่</button>
+  </div>
+</div>
+
+<!-- ══ Screen 6: History ══ -->
+<div id="scHistory" class="screen">
+  <div class="header">
+    <div><div class="header-title">ประวัติออเดอร์</div></div>
+    <button class="header-btn" onclick="showScreen('scOrder')">← กลับ</button>
+  </div>
+  <div class="history-body" id="historyBody">
+    <div style="text-align:center;padding:40px;color:var(--sub)">กำลังโหลด...</div>
+  </div>
+</div>
+
+<!-- ══ Screen 7: Success ══ -->
+<div id="scSuccess" class="screen">
+  <div class="success-icon">✅</div>
+  <div class="success-title">สั่งซื้อสำเร็จ!</div>
+  <div class="success-sub">ทีมงานละกอนจะติดต่อกลับเพื่อนัดส่ง</div>
+  <div class="success-card">
+    <div class="success-order-id">เลขออเดอร์</div>
+    <div class="success-order-val" id="successOrderId">—</div>
+    <div id="successItems"></div>
+    <div class="success-grand">
+      <span>ยอดรวม</span>
+      <span class="success-grand-amt" id="successGrand">฿0</span>
+    </div>
+    <div class="success-addr" id="successAddr"></div>
+  </div>
+  <button class="btn-reorder" onclick="resetOrder()">🛒 สั่งใหม่</button>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════
+let lineUserId       = null;
+let customer         = null;
+let products         = [];
+let addresses        = [];
+let selectedAddrId   = null;   // Address_ID ที่เลือกอยู่
+let cart             = {};     // { productId: qty }
+let capturedGps      = null;   // { lat, lng }
+let addingFirstAddr  = true;   // ใช้ตอนกำลัง register (ป้องกัน skip)
+
+const CACHE_PRODUCTS_TTL  = 5 * 60 * 1000; // 5 นาที
+const CACHE_CUSTOMER_TTL  = 24 * 60 * 60 * 1000;
+
+// ══════════════════════════════════════════
+//  Screen helpers
+// ══════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function setLoadingText(msg) {
+  document.getElementById('loadingText').textContent = msg;
+}
+
+function showInitError(msg) {
+  document.getElementById('initError').style.display = 'block';
+  document.getElementById('initErrorMsg').textContent = msg;
+  document.getElementById('loadingText').style.display = 'none';
+  document.querySelector('#scLoading .spinner').style.display = 'none';
+}
+
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ══════════════════════════════════════════
+//  Cache
+// ══════════════════════════════════════════
+function cacheSet(key, value, ttl) {
+  localStorage.setItem(key, JSON.stringify({ value, expires: Date.now() + ttl }));
+}
+function cacheGet(key) {
+  try {
+    const item = JSON.parse(localStorage.getItem(key));
+    if (item && Date.now() < item.expires) return item.value;
+  } catch (_) {}
+  return null;
+}
+
+// ══════════════════════════════════════════
+//  API
+// ══════════════════════════════════════════
+async function apiGet(params) {
+  const url = GAS_URL + "?" + new URLSearchParams(params).toString();
+  const res  = await fetch(url);
+  return res.json();
+}
+
+async function apiPost(body) {
+  // GAS Web App มักมีปัญหา CORS กับ POST ใน LINE webview
+  // แก้โดยส่งเป็น GET พร้อม encode body เป็น URL param
+  const params = new URLSearchParams({ payload: JSON.stringify(body) });
+  const res = await fetch(GAS_URL + "?" + params.toString(), {
+    redirect: "follow",
+  });
+  return res.json();
+}
+
+// ══════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════
+async function init() {
+  setLoadingText("กำลังเชื่อมต่อ LINE...");
+
+  // liff.init timeout 15s + fallback dev mode
+  const liffPromise = new Promise(async (resolve) => {
+    const timer = setTimeout(() => resolve(null), 15000);
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      clearTimeout(timer);
+      if (liff.isLoggedIn()) {
+        const profile = await liff.getProfile();
+        lineUserId = profile.userId;
+      }
+      resolve(lineUserId);
+    } catch (e) {
+      clearTimeout(timer);
+      console.warn("LIFF fallback dev mode:", e.message);
+      lineUserId = "dev-" + Date.now();
+      resolve(lineUserId);
+    }
+  });
+
+  setLoadingText("กำลังโหลดข้อมูล...");
+
+  // parallel: liff + products
+  const [uid] = await Promise.all([
+    liffPromise,
+    loadProducts(),
+  ]);
+  lineUserId = uid || lineUserId;
+
+  setLoadingText("กำลังตรวจสอบสมาชิก...");
+  customer = await loadCustomer(lineUserId);
+
+  if (!customer) {
+    showScreen('scRegister');
+    return;
+  }
+
+  // โหลดที่อยู่
+  addresses = await loadAddresses(lineUserId);
+
+  if (!addresses.length) {
+    openAddAddress(true); // ต้องเพิ่มที่อยู่ก่อน ไม่มีปุ่ม skip
+    return;
+  }
+
+  // เลือก default address
+  const def = addresses.find(a => a.Is_Default) || addresses[0];
+  selectedAddrId = def.Address_ID;
+
+  showOrderScreen();
+}
+
+// ══════════════════════════════════════════
+//  Load data
+// ══════════════════════════════════════════
+async function loadCustomer(uid) {
+  const cacheKey = "lakon_customer_" + uid;
+  const cached   = cacheGet(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await apiGet({ action: "getCustomer", lineUserId: uid });
+    if (data.customer) {
+      cacheSet(cacheKey, data.customer, CACHE_CUSTOMER_TTL);
+      return data.customer;
+    }
+  } catch (e) { console.error(e); }
+  return null;
+}
+
+async function loadProducts() {
+  try {
+    const data = await apiGet({ action: "getProducts" });
+    if (data.products) {
+      products = data.products;
+      return products;
+    }
+  } catch (e) { console.error(e); }
+  return [];
+}
+
+async function loadAddresses(uid) {
+  try {
+    const data = await apiGet({ action: "getAddresses", lineUserId: uid });
+    return data.addresses || [];
+  } catch (e) { console.error(e); return []; }
+}
+
+// ══════════════════════════════════════════
+//  Register
+// ══════════════════════════════════════════
+async function submitRegister() {
+  const company       = document.getElementById('regCompany').value.trim();
+  const contactPerson = document.getElementById('regContact').value.trim();
+  const contactNumber = document.getElementById('regPhone').value.trim();
+
+  if (!company || !contactPerson || !contactNumber) {
+    showToast('กรุณากรอกข้อมูลให้ครบ'); return;
+  }
+
+  const btn = document.getElementById('btnRegister');
+  btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
+
+  try {
+    const data = await apiPost({ action: "registerCustomer", lineUserId, company, contactPerson, contactNumber });
+    if (data.success) {
+      localStorage.removeItem("lakon_customer_" + lineUserId);
+      customer = await loadCustomer(lineUserId);
+      openAddAddress(true); // เพิ่มที่อยู่แรก (บังคับ)
+    } else {
+      showToast('เกิดข้อผิดพลาด: ' + (data.error || ''));
+      btn.disabled = false; btn.textContent = 'ถัดไป → เพิ่มที่อยู่จัดส่ง';
+    }
+  } catch (e) {
+    showToast('ไม่สามารถเชื่อมต่อได้');
+    btn.disabled = false; btn.textContent = 'ถัดไป → เพิ่มที่อยู่จัดส่ง';
+  }
+}
+
+// ══════════════════════════════════════════
+//  Add Address screen
+// ══════════════════════════════════════════
+function openAddAddress(isFirst) {
+  addingFirstAddr = isFirst;
+  capturedGps     = null;
+
+  // reset fields
+  ['addrLabel','addrDetail','addrGpsDisplay','addrPhoneBackup'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('gpsStatus').textContent = '';
+  document.getElementById('gpsStatus').className   = 'gps-status';
+
+  document.getElementById('addAddrSubtitle').textContent = isFirst ? 'เพิ่มที่อยู่จัดส่ง (ที่อยู่แรก)' : 'เพิ่มที่อยู่ใหม่';
+  document.getElementById('btnSkipAddr').style.display   = isFirst ? 'none' : 'block';
+  document.getElementById('btnSaveAddr').disabled        = false;
+  document.getElementById('btnSaveAddr').textContent     = 'บันทึกที่อยู่';
+
+  showScreen('scAddAddress');
+}
+
+function skipAddAddress() {
+  // เรียกได้เฉพาะตอนเพิ่มที่อยู่เพิ่มเติม (isFirst = false)
+  showScreen('scAddressList');
+}
+
+// GPS capture
+function captureGPS() {
+  if (!navigator.geolocation) {
+    showToast('เบราว์เซอร์นี้ไม่รองรับ GPS'); return;
+  }
+  const btn    = document.getElementById('btnGetGps');
+  const status = document.getElementById('gpsStatus');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  status.textContent  = 'กำลังระบุตำแหน่ง...';
+  status.className    = 'gps-status';
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      capturedGps = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      document.getElementById('addrGpsDisplay').value =
+        capturedGps.lat.toFixed(6) + ", " + capturedGps.lng.toFixed(6);
+      status.textContent = '✅ เก็บตำแหน่งสำเร็จ';
+      status.className   = 'gps-status ok';
+      btn.disabled    = false;
+      btn.textContent = '📍';
+    },
+    err => {
+      status.textContent = '❌ ไม่สามารถระบุตำแหน่งได้ (' + err.message + ')';
+      status.className   = 'gps-status err';
+      btn.disabled    = false;
+      btn.textContent = '📍';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+async function submitAddress() {
+  const label        = document.getElementById('addrLabel').value.trim();
+  const addressDetail= document.getElementById('addrDetail').value.trim();
+  const phoneBackup  = document.getElementById('addrPhoneBackup').value.trim();
+
+  if (!label || !addressDetail) {
+    showToast('กรุณากรอกชื่อที่อยู่และรายละเอียด'); return;
+  }
+
+  const btn = document.getElementById('btnSaveAddr');
+  btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
+
+  try {
+    const data = await apiPost({
+      action       : "addAddress",
+      lineUserId,
+      label,
+      addressDetail,
+      gpsLat       : capturedGps ? capturedGps.lat : "",
+      gpsLng       : capturedGps ? capturedGps.lng : "",
+      phoneBackup,
+    });
+
+    if (data.success) {
+      addresses = await loadAddresses(lineUserId);
+      if (!selectedAddrId) {
+        const def = addresses.find(a => a.Is_Default) || addresses[0];
+        if (def) selectedAddrId = def.Address_ID;
+      }
+      if (addingFirstAddr) {
+        showOrderScreen();
+      } else {
+        renderAddrList();
+        showScreen('scAddressList');
+      }
+    } else {
+      showToast('เกิดข้อผิดพลาด: ' + (data.error || ''));
+      btn.disabled = false; btn.textContent = 'บันทึกที่อยู่';
+    }
+  } catch (e) {
+    showToast('ไม่สามารถเชื่อมต่อได้');
+    btn.disabled = false; btn.textContent = 'บันทึกที่อยู่';
+  }
+}
+
+// ══════════════════════════════════════════
+//  Order screen
+// ══════════════════════════════════════════
+function showOrderScreen() {
+  if (customer) {
+    document.getElementById('orderCompanyName').textContent =
+      (customer.Company || 'ละกอน') + ' 💧';
+  }
+  renderAddrSelector();
+  renderProducts();
+  showScreen('scOrder');
+}
+
+function renderAddrSelector() {
+  const wrap = document.getElementById('addrSelectorWrap');
+  const addr = addresses.find(a => a.Address_ID === selectedAddrId) || addresses[0];
+
+  if (!addr) {
+    wrap.innerHTML = `
+      <div class="no-addr-warning">
+        ⚠️ ยังไม่มีที่อยู่จัดส่ง
+        <button class="btn-gps" style="font-size:13px;padding:4px 10px;border-radius:8px"
+          onclick="openAddAddress(true)">+ เพิ่ม</button>
+      </div>`;
+    return;
+  }
+
+  const gpsLink = (addr.GPS_Lat && addr.GPS_Lng)
+    ? `<a class="addr-gps-chip"
+         href="https://www.google.com/maps?q=${addr.GPS_Lat},${addr.GPS_Lng}"
+         target="_blank">📍 ดูแผนที่</a>`
+    : '';
+
+  wrap.innerHTML = `
+    <div class="addr-selector" onclick="openAddrList()">
+      <div class="addr-icon">📦</div>
+      <div class="addr-info">
+        <div class="addr-label">${addr.Label}</div>
+        <div class="addr-detail">${addr.Address_Detail}</div>
+        ${addr.Phone_Backup ? `<div class="addr-phone">📞 สำรอง: ${addr.Phone_Backup}</div>` : ''}
+        ${gpsLink}
+      </div>
+      <div class="addr-change">เปลี่ยน ›</div>
+    </div>`;
+}
+
+function openAddrList() {
+  renderAddrList();
+  showScreen('scAddressList');
+}
+
+function renderAddrList() {
+  const body = document.getElementById('addrListBody');
+  if (!addresses.length) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>ยังไม่มีที่อยู่</p></div>`;
+    return;
+  }
+
+  body.innerHTML = addresses.map(addr => {
+    const isSelected = addr.Address_ID === selectedAddrId;
+    const defChip    = addr.Is_Default ? '<span class="default-chip">ล่าสุด</span>' : '';
+    const gpsLink    = (addr.GPS_Lat && addr.GPS_Lng)
+      ? `<a class="addr-gps-chip"
+           href="https://www.google.com/maps?q=${addr.GPS_Lat},${addr.GPS_Lng}"
+           target="_blank">📍 ดูแผนที่</a>` : '';
+
+    return `
+    <div class="addr-list-card ${isSelected ? 'selected' : ''}" id="addrCard-${addr.Address_ID}">
+      <div class="addr-list-card-info">
+        <div class="addr-list-label">${addr.Label} ${defChip}</div>
+        <div class="addr-list-detail">${addr.Address_Detail}</div>
+        ${addr.Phone_Backup ? `<div class="addr-list-phone">📞 ${addr.Phone_Backup}</div>` : ''}
+        ${gpsLink}
+      </div>
+      <div class="addr-list-actions">
+        <button class="btn-select-addr" onclick="selectAddress('${addr.Address_ID}')">เลือก</button>
+        ${!addr.Is_Default
+          ? `<button class="btn-set-default" onclick="makeDefault('${addr.Address_ID}')">ตั้งเป็นค่าเริ่มต้น</button>`
+          : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectAddress(addressId) {
+  selectedAddrId = addressId;
+  renderAddrSelector();
+  renderAddrList(); // update selected highlight
+  showScreen('scOrder');
+}
+
+async function makeDefault(addressId) {
+  try {
+    await apiPost({ action: "setDefaultAddress", lineUserId, addressId });
+    addresses = await loadAddresses(lineUserId);
+    renderAddrList();
+  } catch (e) {
+    showToast('เกิดข้อผิดพลาด');
+  }
+}
+
+// ══════════════════════════════════════════
+//  Products & Cart
+// ══════════════════════════════════════════
+function renderProducts() {
+  const container = document.getElementById('productList');
+  if (!products.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--sub)">ไม่มีสินค้าในสต็อก</div>';
+    return;
+  }
+
+  container.innerHTML = products.map(p => {
+    const qty = cart[p.Product_ID] || 0;
+    return `
+    <div class="product-card" id="card-${p.Product_ID}">
+      <div class="product-info">
+        <div class="product-name">${p.Product_Name || p.Product_ID}</div>
+        <div class="product-meta">${p.Size || ''} · ${p.Category || ''}</div>
+        <div class="product-price">฿${Number(p.Price).toLocaleString()} / ลัง</div>
+      </div>
+      <div class="stepper">
+        <button class="stepper-btn" onclick="updateCart('${p.Product_ID}',-1)" ${qty===0?'disabled':''}>−</button>
+        <span class="stepper-qty" id="qty-${p.Product_ID}">${qty}</span>
+        <button class="stepper-btn" onclick="updateCart('${p.Product_ID}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateCart(productId, delta) {
+  const next = Math.max(0, (cart[productId] || 0) + delta);
+  cart[productId] = next;
+
+  const qtyEl = document.getElementById('qty-' + productId);
+  if (qtyEl) qtyEl.textContent = next;
+
+  const card = document.getElementById('card-' + productId);
+  if (card) card.querySelector('.stepper-btn').disabled = next === 0;
+
+  updateSummary();
+}
+
+function updateSummary() {
+  let count = 0, total = 0;
+  products.forEach(p => {
+    const qty = cart[p.Product_ID] || 0;
+    if (qty > 0) { count += qty; total += qty * Number(p.Price); }
+  });
+
+  document.getElementById('summaryCount').textContent = count + ' รายการ';
+  document.getElementById('summaryTotal').textContent = '฿' + total.toLocaleString();
+  document.getElementById('btnPlaceOrder').disabled   = count === 0 || !selectedAddrId;
+}
+
+// ══════════════════════════════════════════
+//  Place Order
+// ══════════════════════════════════════════
+async function confirmOrder() {
+  if (!selectedAddrId) {
+    showToast('กรุณาเลือกที่อยู่จัดส่งก่อน'); return;
+  }
+
+  const items = products
+    .filter(p => (cart[p.Product_ID] || 0) > 0)
+    .map(p => ({
+      productId  : p.Product_ID,
+      productName: p.Product_Name || p.Product_ID,
+      size       : p.Size || '',
+      qty        : cart[p.Product_ID],
+      unitPrice  : Number(p.Price),
+    }));
+
+  if (!items.length) return;
+
+  const note = document.getElementById('orderNote').value.trim();
+  const btn  = document.getElementById('btnPlaceOrder');
+  btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+
+  try {
+    const data = await apiPost({
+      action    : "placeOrder",
+      lineUserId,
+      items,
+      note,
+      addressId : selectedAddrId,
+    });
+
+    if (data.success) {
+      const addr = addresses.find(a => a.Address_ID === selectedAddrId);
+      showSuccessScreen({
+        orderId     : data.orderId,
+        items,
+        grandTotal  : data.grandTotal,
+        addressLabel: addr ? addr.Label : '',
+        addressDetail: addr ? addr.Address_Detail : '',
+      });
+    } else {
+      showToast('เกิดข้อผิดพลาด: ' + (data.error || ''));
+      btn.disabled = false; btn.textContent = 'สั่งซื้อ →';
+    }
+  } catch (e) {
+    showToast('ไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่');
+    btn.disabled = false; btn.textContent = 'สั่งซื้อ →';
+  }
+}
+
+// ══════════════════════════════════════════
+//  Success
+// ══════════════════════════════════════════
+function showSuccessScreen({ orderId, items, grandTotal, addressLabel, addressDetail }) {
+  document.getElementById('successOrderId').textContent = orderId;
+  document.getElementById('successGrand').textContent   = '฿' + Number(grandTotal).toLocaleString();
+
+  document.getElementById('successItems').innerHTML = items.map(it =>
+    `<div class="success-item">
+      <span>${it.productName} × ${it.qty}</span>
+      <span>฿${(it.qty * it.unitPrice).toLocaleString()}</span>
+    </div>`
+  ).join('');
+
+  document.getElementById('successAddr').innerHTML =
+    `📦 ${addressLabel}<br><span style="color:var(--sub)">${addressDetail}</span>`;
+
+  showScreen('scSuccess');
+}
+
+function resetOrder() {
+  cart = {};
+  document.getElementById('orderNote').value     = '';
+  document.getElementById('btnPlaceOrder').disabled  = true;
+  document.getElementById('btnPlaceOrder').textContent = 'สั่งซื้อ →';
+  renderProducts();
+  updateSummary();
+  showScreen('scOrder');
+}
+
+// ══════════════════════════════════════════
+//  History
+// ══════════════════════════════════════════
+async function loadHistory() {
+  const body = document.getElementById('historyBody');
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--sub)">กำลังโหลด...</div>';
+
+  try {
+    const data   = await apiGet({ action: "getOrders", lineUserId });
+    const orders = data.orders || [];
+
+    if (!orders.length) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>ยังไม่มีประวัติออเดอร์</p></div>`;
+      return;
+    }
+
+    body.innerHTML = orders.map(order => {
+      const itemsHtml = (order.items || []).map(it => {
+        const p = products.find(x => String(x.Product_ID) === String(it.productId));
+        const name = p ? (p.Product_Name || it.productId) : it.productId;
+        return `<div class="order-item">
+          <span class="order-item-name">${name} × ${it.qty}</span>
+          <span class="order-item-amt">฿${Number(it.total).toLocaleString()}</span>
+        </div>`;
+      }).join('');
+
+      const addrChip = order.addressLabel
+        ? `<div class="order-addr-chip">📦 ${order.addressLabel}</div>` : '';
+
+      return `
+      <div class="order-card">
+        <div class="order-header">
+          <div>
+            <div class="order-id">${order.orderId}</div>
+            <div class="order-date">${formatThaiDate(order.date)}</div>
+          </div>
+          <div class="order-badges">
+            ${statusBadgeHtml(order.status)}
+            ${payBadgeHtml(order.paymentStatus)}
+          </div>
+        </div>
+        <hr class="order-divider" />
+        ${itemsHtml}
+        <div class="order-total">
+          <span>ยอดรวม</span>
+          <span style="color:var(--sky-dark)">฿${Number(order.grandTotal).toLocaleString()}</span>
+        </div>
+        ${addrChip}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--red)">โหลดไม่สำเร็จ</div>';
+  }
+}
+
+// ══════════════════════════════════════════
+//  Helpers
+// ══════════════════════════════════════════
+function formatThaiDate(raw) {
+  if (!raw) return '—';
+  try {
+    return new Date(raw).toLocaleDateString('th-TH', {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return String(raw); }
+}
+
+function statusBadgeHtml(s) {
+  const m = { Pending:'badge-pending', Confirmed:'badge-confirmed', Delivered:'badge-delivered', Cancelled:'badge-cancelled' };
+  return `<span class="badge ${m[s]||'badge-pending'}">${s||'Pending'}</span>`;
+}
+
+function payBadgeHtml(s) {
+  return `<span class="badge ${s==='Paid'?'badge-paid':'badge-unpaid'}">${s||'Unpaid'}</span>`;
+}
+
+// ══════════════════════════════════════════
+//  Bootstrap
+// ══════════════════════════════════════════
+window.addEventListener('load', () => {
+  init().catch(err => {
+    console.error(err);
+    showInitError("เกิดข้อผิดพลาด: " + err.message);
+  });
+});
+</script>
+</body>
+</html>
