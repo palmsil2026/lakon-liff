@@ -190,6 +190,10 @@ const FINANCE_DECLINE =
 // ════════════════════════════════════════════════════════════
 function doPost(e) {
   try {
+    // 📥 นำเข้ารายวันจากแอปผู้บริหาร (มาก่อน webhook — body เป็น form ไม่ใช่ JSON ของ LINE)
+    if (e && e.parameter && e.parameter.action === 'attImport') {
+      return jsonOut(attImportRows(e.parameter.key, e.parameter.rows));
+    }
     const body = JSON.parse(e.postData.contents);
     // LINE ส่งรูปกับข้อความมาเป็นคนละ event แต่มาใน webhook ก้อนเดียวกัน
     // เก็บข้อความในก้อนนี้ไว้ก่อน เพื่อให้ตอนวิเคราะห์รูปรู้ว่าคนส่ง "พิมพ์อะไรมาพร้อมรูป"
@@ -283,6 +287,7 @@ function doGet(e) {
   if (p.action === 'hrLeaveDel') return jsonOut(hrDeleteLeave(p.key, p.id));
   if (p.action === 'hrPay')     return jsonOut(hrSavePayroll(p.key, p));
   if (p.action === 'hrPayAll')  return jsonOut(hrPayAllPeriod(p.key, p.period));
+  if (p.action === 'attSave')   return jsonOut(attSaveDay(p.key, p));
   if (p.action === 'hrPayroll') return jsonOut(hrPayrollMonth(p.key, p.period));
 
   // 💬 คุยกับคุณเลขาจากแอปบอร์ด (เฉพาะ key เจ้าของ — สมอง/ความจำเดียวกับไลน์)
@@ -1794,7 +1799,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-23a';
+const CODE_VERSION = '2026-08-23b';
 
 function healthCheck() {
   const L = [];
@@ -3225,6 +3230,149 @@ const HR_TABS = {
                'หัก', 'สุทธิ', 'สถานะ', 'วันที่จ่าย', 'ผู้บันทึก', 'หมายเหตุ',
                'หักสาย', 'หักขาด', 'หักประกัน', 'หักอื่นๆ'],
 };
+// ─────────────────────────────────────────────────────────────
+// 📆 HR_Attendance — บันทึกการทำงานรายวัน (คำขอข้อ 5 แชทเงินเดือน)
+// สูตรลอกจาก origin-hq/payroll/payroll.js (calcPerson) — อย่าแก้เลขโดยไม่เทียบต้นฉบับ
+// ─────────────────────────────────────────────────────────────
+const ATT_HEAD = ['Att_ID', 'งวด', 'วันที่', 'Staff_ID', 'ชื่อ', 'เวลาเข้า', 'เวลาออก', 'สถานะ',
+                  'สาย(นาที)', 'ออกก่อน(นาที)', 'หักสาย(บาท)', 'OT(นาที)', 'OT(ยูนิต)', 'ค่าOT(บาท)',
+                  'ค่าแรงวันนั้น', 'รวมวันนั้น', 'แก้มือ', 'หมายเหตุ', 'อัปเดตเมื่อ'];
+const WORK_RULE = { startMin: 480, endMin: 1020, hoursPerDay: 8, lateBlockMin: 30, otBlockMin: 15, otRoundUpFrom: 10 };
+function attSheet() {
+  const ss = plantSS(); if (!ss) return null;
+  let s = ss.getSheetByName('HR_Attendance');
+  if (!s) { s = ss.insertSheet('HR_Attendance'); s.appendRow(ATT_HEAD); s.setFrozenRows(1); }
+  return s;
+}
+const hhmmToMin = function (v) {
+  const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+const minToHhmm = function (n) {
+  return n == null ? '' : ('0' + Math.floor(n / 60)).slice(-2) + ':' + ('0' + (n % 60)).slice(-2);
+};
+// คิดเงิน 1 วันตามกติกา (ลอกจาก payroll.js calcPerson) — role: {type:'daily'|'monthly', rate, flexible}
+function hrCalcDay(role, tIn, tOut, status) {
+  const W = WORK_RULE;
+  const o = { lateMin: 0, earlyMin: 0, latePay: 0, otMin: 0, otUnits: 0, otPay: 0, wage: 0, total: 0 };
+  const monthly = role.type === 'monthly';
+  const hourly = role.rate / W.hoursPerDay;
+  if (status === 'ขาด' || status === 'ลา' || status === 'ยังไม่เริ่มงาน' || status === 'วันหยุด') return o;
+  if (status === 'สแกนไม่ครบ' || tIn == null || tOut == null) {   // สแกนไม่ครบ = จ่ายเต็มวัน (กติกาเดิม)
+    o.wage = monthly ? 0 : role.rate; o.total = o.wage; return o;
+  }
+  const half = status === 'ครึ่งวัน';
+  const dayRate = half ? role.rate / 2 : role.rate;
+  const lateRaw = Math.max(0, tIn - W.startMin);
+  const lateBlocks = (role.flexible || lateRaw <= 0) ? 0 : Math.ceil(lateRaw / W.lateBlockMin);
+  const otRaw = role.flexible ? 0 : Math.max(0, tOut - W.endMin);
+  const q = Math.floor(otRaw / W.otBlockMin), rem = otRaw % W.otBlockMin;
+  const units = otRaw <= 0 ? 0 : q + (rem >= W.otRoundUpFrom ? 1 : 0);
+  const earlyRaw = (role.flexible || half) ? 0 : Math.max(0, W.endMin - tOut);
+  const earlyBlocks = earlyRaw > 0 ? Math.ceil(earlyRaw / W.lateBlockMin) : 0;
+  o.lateMin = lateBlocks * W.lateBlockMin; o.earlyMin = earlyBlocks * W.lateBlockMin;
+  o.otMin = otRaw; o.otUnits = units;
+  if (!monthly) {   // รายเดือน: ไม่หักสาย/ไม่มี OT (กติกาปัจจุบัน) — บันทึกนาทีไว้ดูอย่างเดียว
+    o.latePay = Math.round((lateBlocks + earlyBlocks) * (W.lateBlockMin / 60) * hourly * 100) / 100;
+    o.otPay = Math.round(units * hourly * (W.otBlockMin / 60) * 100) / 100;
+    o.wage = dayRate; o.total = Math.round((dayRate + o.otPay - o.latePay) * 100) / 100;
+  }
+  return o;
+}
+// ข้อมูลจ้างของคนหนึ่ง (จาก HR_Staff: ประเภทจ้าง/เงินเดือน=เรต · ร้านกาแฟ = flexible)
+function hrRoleOf(staffId, name) {
+  let h = null;
+  hrRowsByHead('HR_Staff').forEach(function (r) {
+    if (h) return;
+    if ((staffId && String(r['Staff_ID'] || '').trim() === staffId) || hrNameMatch(r['ชื่อ'], name)) h = r;
+  });
+  const dept = h ? String(h['แผนก'] || '') : '';
+  return { type: /รายเดือน/.test(h ? String(h['ประเภทจ้าง'] || '') : '') ? 'monthly' : 'daily',
+           rate: h ? execNum(h['เงินเดือน']) : 0,
+           flexible: /คาเฟ่|กาแฟ/.test(dept + (h ? String(h['ตำแหน่ง'] || '') : '')) };
+}
+// รายวันของคนหนึ่ง (ล่าสุดก่อน สูงสุด 40 แถว) — แนบใน hrDetail
+function attListFor(staffId, name) {
+  const s = attSheet(); if (!s || s.getLastRow() < 2) return [];
+  return hrRowsByHead('HR_Attendance').filter(function (r) {
+    return (staffId && String(r['Staff_ID'] || '').trim() === staffId) || hrNameMatch(r['ชื่อ'], name);
+  }).map(function (r) {
+    return { id: String(r['Att_ID'] || ''), per: hrNormPeriod(r['งวด']), d: execDateKey(r['วันที่']),
+             tin: String(r['เวลาเข้า'] || ''), tout: String(r['เวลาออก'] || ''), st: String(r['สถานะ'] || ''),
+             lateMin: execNum(r['สาย(นาที)']), earlyMin: execNum(r['ออกก่อน(นาที)']), latePay: execNum(r['หักสาย(บาท)']),
+             otMin: execNum(r['OT(นาที)']), otUnits: execNum(r['OT(ยูนิต)']), otPay: execNum(r['ค่าOT(บาท)']),
+             wage: execNum(r['ค่าแรงวันนั้น']), total: execNum(r['รวมวันนั้น']),
+             edited: String(r['แก้มือ'] || '') === '1', note: String(r['หมายเหตุ'] || '') };
+  }).sort(function (a, b) { return a.d < b.d ? 1 : -1; }).slice(0, 40);
+}
+// แก้/เพิ่มบันทึกรายวัน 1 วัน (CEO) — ระบบคิดสาย/OT/ค่าแรงใหม่ให้จากกติกา
+function attSaveDay(key, p) {
+  if (execAuth(key) !== 'ceo') return { ok: false, msg: 'เฉพาะ CEO เท่านั้นค่ะ' };
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const s = attSheet(); if (!s) return { ok: false, msg: 'ยังไม่ได้ตั้ง PLANT_SHEET_ID' };
+    const d = execDateKey(p.date); if (!d) return { ok: false, msg: 'วันที่ไม่ถูกต้อง' };
+    const name = String(p.name || '').trim(); if (!name) return { ok: false, msg: 'ต้องมีชื่อ' };
+    const st = String(p.st || 'มา');
+    const tIn = hhmmToMin(p.tin), tOut = hhmmToMin(p.tout);
+    const role = hrRoleOf(String(p.staffId || '').trim(), name);
+    const c = hrCalcDay(role, tIn, tOut, st);
+    const day = Number(d.slice(8));
+    const per = d.slice(0, 7) + '-' + (day >= 16 ? '2' : '1');
+    const v = s.getDataRange().getValues();
+    let ri = -1, id = String(p.id || '').trim();
+    for (let i = 1; i < v.length; i++) {
+      if (execDateKey(v[i][2]) !== d) continue;
+      const rid = String(v[i][3] || '').trim();
+      if ((rid && rid === String(p.staffId || '').trim()) || hrNameMatch(v[i][4], name)) { ri = i; id = String(v[i][0]); break; }
+    }
+    if (!id) id = 'ATT' + d.replace(/-/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const row = [id, per, d, String(p.staffId || ''), name, tIn == null ? '' : minToHhmm(tIn), tOut == null ? '' : minToHhmm(tOut), st,
+                 c.lateMin, c.earlyMin, c.latePay, c.otMin, c.otUnits, c.otPay, c.wage, c.total, '1', String(p.note || ''), new Date()];
+    if (ri < 0) s.appendRow(row); else s.getRange(ri + 1, 1, 1, row.length).setValues([row]);
+    return { ok: true, msg: 'บันทึกวันที่ ' + d.slice(8) + '/' + d.slice(5, 7) + ' แล้ว (คิดเงินใหม่ตามกติกา)', calc: c };
+  } catch (e) { return { ok: false, msg: String(e) }; }
+  finally { lock.releaseLock(); }
+}
+// 📥 นำเข้ารายวันเป็นชุดจากไฟล์สแกน (ฝั่งแอปแกะไฟล์+คิดเลขแล้ว ส่งแถวมาเขียน) — เรียกผ่าน doPost กันติดลิมิตความยาว URL
+function attImportRows(key, rowsJson) {
+  if (execAuth(key) !== 'ceo') return { ok: false, msg: 'เฉพาะ CEO เท่านั้นค่ะ' };
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const s = attSheet(); if (!s) return { ok: false, msg: 'ยังไม่ได้ตั้ง PLANT_SHEET_ID' };
+    const rows = JSON.parse(rowsJson);
+    if (!Array.isArray(rows) || !rows.length) return { ok: false, msg: 'ไม่มีข้อมูล' };
+    // ลบของเดิมที่ "ไม่ได้แก้มือ" ในช่วงวัน+ชื่อเดียวกันก่อน (นำเข้าซ้ำได้ ไม่สร้างซ้ำ · ที่แก้มือไว้ไม่ทับ)
+    const keys = {};
+    rows.forEach(function (r) { keys[r.d + '|' + String(r.name).trim()] = true; });
+    const v = s.getDataRange().getValues();
+    const kept = {};
+    for (let i = v.length - 1; i >= 1; i--) {
+      const k = execDateKey(v[i][2]) + '|' + String(v[i][4] || '').trim();
+      if (!keys[k]) continue;
+      if (String(v[i][16] || '') === '1') { kept[k] = true; continue; }   // แก้มือไว้ = ของจริงกว่าไฟล์
+      s.deleteRow(i + 1);
+    }
+    let n = 0;
+    const out = [];
+    rows.forEach(function (r) {
+      const k = r.d + '|' + String(r.name).trim();
+      if (kept[k]) return;
+      const day = Number(String(r.d).slice(8));
+      out.push(['ATT' + String(r.d).replace(/-/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+                String(r.d).slice(0, 7) + '-' + (day >= 16 ? '2' : '1'), r.d, String(r.staffId || ''), String(r.name),
+                r.tin || '', r.tout || '', String(r.st || 'มา'),
+                execNum(r.lateMin), execNum(r.earlyMin), execNum(r.latePay), execNum(r.otMin), execNum(r.otUnits),
+                execNum(r.otPay), execNum(r.wage), execNum(r.total), '', String(r.note || ''), new Date()]);
+      n++;
+    });
+    if (out.length) s.getRange(s.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+    return { ok: true, n: n, skippedEdited: Object.keys(kept).length,
+             msg: 'นำเข้า ' + n + ' วัน-คน' + (Object.keys(kept).length ? ' (ข้าม ' + Object.keys(kept).length + ' รายการที่แก้มือไว้)' : '') };
+  } catch (e) { return { ok: false, msg: String(e) }; }
+  finally { lock.releaseLock(); }
+}
+
 // เติมหัวคอลัมน์ที่ขาดให้ชีตเก่า (ท้ายตารางเสมอ ไม่กระทบของเดิม) — คืน map ชื่อหัว→เลขคอลัมน์ (1-based)
 function hrEnsureCols(s, wanted) {
   let lastCol = s.getLastColumn();
@@ -3429,6 +3577,8 @@ function hrStaffDetail(key, staffId) {
         return { id: String(l['Leave_ID'] || ''), from: a, to: b, days: hrDays(a, b), type: String(l['ประเภท'] || ''), note: String(l['หมายเหตุ'] || ''), row: l._row };
       }).sort(function (a, b) { return b.from.localeCompare(a.from); });
     const out = { ok: true, role: role, staff: s, history: hist2.slice(0, 60), leaves: leaves };
+    // 📆 บันทึกการทำงานรายวัน (มีตัวเลขค่าแรง → CEO/กรรมการเท่านั้น)
+    if (execCanMoney(role)) { try { out.attendance = attListFor(s.id, nm); } catch (e2) {} }
     if (execCanMoney(role)) {
       out.payroll = hrRowsByHead('HR_Payroll').filter(function (p) { return String(p['Staff_ID'] || '').trim() === s.id || hrNameMatch(p['ชื่อ'], nm); })
         .map(function (p) {

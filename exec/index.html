@@ -354,6 +354,32 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
   </div>
 </div>
 
+<!-- 📆 แก้บันทึกการทำงานรายวัน (CEO) -->
+<div class="mask" id="atMask">
+  <div class="sheet">
+    <h3 id="atTitle">📆 บันทึกรายวัน</h3>
+    <input type="hidden" id="at_staff"><input type="hidden" id="at_name"><input type="hidden" id="at_id">
+    <div class="row2">
+      <div><label>วันที่</label><input id="at_date" type="date"></div>
+      <div><label>สถานะ</label><select id="at_st">
+        <option>มา</option><option>ครึ่งวัน</option><option>สแกนไม่ครบ</option>
+        <option>ขาด</option><option>ลา</option><option>วันหยุด</option><option>ยังไม่เริ่มงาน</option>
+      </select></div>
+    </div>
+    <div class="row2">
+      <div><label>เวลาเข้า</label><input id="at_in" type="time"></div>
+      <div><label>เวลาออก</label><input id="at_out" type="time"></div>
+    </div>
+    <label>หมายเหตุ</label><input id="at_note" placeholder="เช่น เครื่องสแกนเสีย / ออกไปส่งของ">
+    <p style="font-size:.74rem;color:var(--sub);margin-top:8px">บันทึกแล้วระบบ<b>คิดสาย/ออกก่อน/OT/ค่าแรงใหม่ให้ตามกติกา</b>จากเวลาที่ใส่ · รายการที่แก้มือจะไม่ถูกทับตอนนำเข้าไฟล์สแกนซ้ำ</p>
+    <div style="display:flex;gap:9px;margin-top:12px">
+      <button class="bt bt-main" id="at_save" style="flex:1;justify-content:center">บันทึก (คิดเงินใหม่)</button>
+      <button class="bt bt-gray" id="at_close">ปิด</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="impFile" accept=".xlsx" style="display:none">
+
 <!-- 💸 ฟอร์มบันทึกรายจ่าย (CEO) -->
 <div class="mask" id="exMask">
   <div class="sheet">
@@ -822,6 +848,233 @@ async function saveExpense(del) {
   b.disabled = false; b.innerHTML = old;
 }
 
+// ════════════════════════════════════════════════════════════
+// 📥 นำเข้าไฟล์เครื่องสแกนนิ้ว (.xlsx) — พอร์ตจาก origin-hq/payroll/payroll.js ห้ามแก้เลขโดยไม่เทียบต้นฉบับ
+// ════════════════════════════════════════════════════════════
+const PR_WORK = { startMin: 480, endMin: 1020, hoursPerDay: 8, lateBlockMin: 30, otBlockMin: 15, otRoundUpFrom: 10 };
+const PR_ROLES = {
+  'หัวหน้าเซลส์':      { type: 'monthly', rate: 18000 },
+  'ผู้จัดการสาย':       { type: 'monthly', rate: 12000 },
+  'ขนส่ง':             { type: 'daily', rate: 410, dilig: 40 },
+  'เซลส์วิ่งเร่':        { type: 'daily', rate: 410, dilig: 40 },
+  'หัวหน้าทีมผลิต':    { type: 'daily', rate: 375, insFlat: 375 },
+  'ทีมผลิต':           { type: 'daily', rate: 375, insFlat: 375 },
+  'ทีมผลิตทดลองงาน': { type: 'daily', rate: 350, insFlat: 375 },
+  'ร้านกาแฟ':          { type: 'daily', rate: 350, flexible: true },
+  'ไม่นำเข้าคนนี้':     { skip: true },
+};
+const prMinHH = m => m == null ? '' : String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const prSerialDate = n => { const d = new Date(Date.UTC(1899, 11, 30) + n * 864e5); return d.toISOString().slice(0, 10); };
+async function prUnzip(buf) {   // xlsx = zip (ใช้ DecompressionStream ไม่ต้องพึ่งไลบรารีนอก)
+  const dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= 0 && i > buf.byteLength - 66000; i--)
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('ไม่ใช่ไฟล์ xlsx ที่อ่านได้');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const files = {}, td = new TextDecoder();
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), cmtLen = dv.getUint16(p + 32, true);
+    const localOff = dv.getUint32(p + 42, true);
+    const name = td.decode(new Uint8Array(buf, p + 46, nameLen));
+    const lNameLen = dv.getUint16(localOff + 26, true), lExtraLen = dv.getUint16(localOff + 28, true);
+    const raw = new Uint8Array(buf, localOff + 30 + lNameLen + lExtraLen, compSize);
+    if (method === 0) files[name] = td.decode(raw);
+    else {
+      const ds = new DecompressionStream('deflate-raw');
+      const out = new Response(new Blob([raw]).stream().pipeThrough(ds));
+      files[name] = await out.text();
+    }
+    p += 46 + nameLen + extraLen + cmtLen;
+  }
+  return files;
+}
+function prWorkbook(files) {
+  const dec = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#10;/g, ' ').replace(/&amp;/g, '&');
+  const get = n => files[n] || '';
+  const shared = [...get('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => {
+    let t = ''; for (const x of m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) t += x[1]; return dec(t);
+  });
+  const names = [...get('xl/workbook.xml').matchAll(/<sheet name="([^"]*)"/g)].map(m => dec(m[1]));
+  const sheets = {};
+  names.forEach((nm, i) => {
+    const xml = get('xl/worksheets/sheet' + (i + 1) + '.xml');
+    const rows = {};
+    for (const r of xml.matchAll(/<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)) {
+      const cells = {};
+      for (const c of r[2].matchAll(/<c r="([A-Z]+)\d+"((?:[^>"]|"[^"]*")*?)(\/>|>([\s\S]*?)<\/c>)/g)) {
+        const inner = c[4] || '';
+        const v = inner.match(/<v>([\s\S]*?)<\/v>/);
+        if (v) { cells[c[1]] = /t="s"/.test(c[2]) ? shared[+v[1]] : v[1]; continue; }
+        // บางโปรแกรมเขียนข้อความแบบ inline (<is><t>) แทน sharedStrings
+        const t = inner.match(/<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>/);
+        if (t) cells[c[1]] = dec(t[1]);
+      }
+      rows[+r[1]] = cells;
+    }
+    sheets[nm] = rows;
+  });
+  return sheets;
+}
+function prReadPeople(rows, dateCol, inCol, outCol) {   // บล็อกละคน · 0.1666 = flag ขาดงาน ไม่ใช่เวลา
+  const people = []; let cur = null;
+  for (const rn of Object.keys(rows).map(Number).sort((a, b) => a - b)) {
+    const R = rows[rn];
+    if (R[dateCol] === 'รหัสพนักงาน') {
+      const keys = Object.keys(R);
+      const i = keys.findIndex(k => R[k] === 'ชื่อพนักงาน');
+      cur = { name: (i >= 0 && keys[i + 1]) ? R[keys[i + 1]] : '(ไม่ทราบชื่อ)', days: [] };
+      people.push(cur); continue;
+    }
+    if (!cur) continue;
+    const d = String(R[dateCol] || '');
+    if (!/^\d+$/.test(d) || +d < 40000) continue;
+    let tIn = R[inCol] !== undefined ? Math.round(+R[inCol] * 1440) : null;
+    let tOut = R[outCol] !== undefined ? Math.round(+R[outCol] * 1440) : null;
+    if (tOut === null && tIn === 240) tIn = null;
+    cur.days.push({ d: +d, in: tIn, out: tOut });
+  }
+  return people;
+}
+function prCalc(person, role, offDaysAllowed) {   // ลอกจาก calcPerson (payroll.js บรรทัด 129-212)
+  const W = PR_WORK, monthly = role.type === 'monthly';
+  const hourly = role.rate / W.hoursPerDay, perOt = hourly * (W.otBlockMin / 60);
+  const days = []; let workDays = 0, paidDays = 0, noScan = 0, lateCount = 0, lateMin = 0, earlyMin = 0;
+  let otUnits = 0, wage = 0, otPay = 0, latePay = 0;
+  for (const d of person.days) {
+    const dk = prSerialDate(d.d);
+    if (role.startSerial && d.d < role.startSerial) { days.push({ d: dk, st: 'ยังไม่เริ่มงาน' }); continue; }
+    if (d.in === null && d.out === null) { noScan++; days.push({ d: dk, st: 'ขาด' }); continue; }
+    if (d.in === null || d.out === null) {
+      workDays++; paidDays++; if (!monthly) wage += role.rate;
+      days.push({ d: dk, st: 'สแกนไม่ครบ', tin: prMinHH(d.in), tout: prMinHH(d.out), wage: monthly ? 0 : role.rate, total: monthly ? 0 : role.rate });
+      continue;
+    }
+    workDays++;
+    const half = (role.halfDays || []).indexOf(d.d) !== -1;
+    const dayRate = half ? role.rate / 2 : role.rate;
+    paidDays += half ? 0.5 : 1;
+    const lateRaw = Math.max(0, d.in - W.startMin);
+    const lateBlocks = (role.flexible || lateRaw <= 0) ? 0 : Math.ceil(lateRaw / W.lateBlockMin);
+    const otRaw = role.flexible ? 0 : Math.max(0, d.out - W.endMin);
+    const q = Math.floor(otRaw / W.otBlockMin), rem = otRaw % W.otBlockMin;
+    const units = otRaw <= 0 ? 0 : q + (rem >= W.otRoundUpFrom ? 1 : 0);
+    const earlyRaw = (role.flexible || half) ? 0 : Math.max(0, W.endMin - d.out);
+    const earlyBlocks = earlyRaw > 0 ? Math.ceil(earlyRaw / W.lateBlockMin) : 0;
+    const dLate = (lateBlocks + earlyBlocks) * (W.lateBlockMin / 60) * hourly;
+    const dOt = units * perOt;
+    if (lateBlocks) { lateCount++; lateMin += lateBlocks * W.lateBlockMin; }
+    if (earlyBlocks) earlyMin += earlyBlocks * W.lateBlockMin;
+    otUnits += units;
+    if (!monthly) { wage += dayRate; otPay += dOt; latePay += dLate; }
+    days.push({ d: dk, st: half ? 'ครึ่งวัน' : 'มา', tin: prMinHH(d.in), tout: prMinHH(d.out),
+      lateMin: lateBlocks * W.lateBlockMin, earlyMin: earlyBlocks * W.lateBlockMin,
+      latePay: monthly ? 0 : Math.round(dLate * 100) / 100, otMin: otRaw, otUnits: units,
+      otPay: monthly ? 0 : Math.round(dOt * 100) / 100, wage: monthly ? 0 : dayRate,
+      total: monthly ? 0 : Math.round((dayRate + dOt - dLate) * 100) / 100 });
+  }
+  const absent = Math.max(0, noScan - offDaysAllowed);
+  let base, dAbsent = 0, bonus = 0;
+  if (monthly) { base = role.rate / 2; dAbsent = Math.round(absent * role.rate / 30 * 100) / 100; }
+  else { base = wage; bonus = (role.dilig && lateCount === 0 && absent === 0) ? role.dilig * workDays : 0; }
+  const gross = base + (monthly ? 0 : otPay) + bonus - dAbsent - (monthly ? 0 : latePay);
+  const ins = role.insFlat !== undefined ? role.insFlat : Math.round(gross * 0.05 * 100) / 100;
+  return { days, workDays, paidDays, absent, lateCount, otUnits, base: Math.round(base * 100) / 100,
+           otPay: Math.round(otPay * 100) / 100, latePay: Math.round(latePay * 100) / 100,
+           dAbsent, bonus, ins, net: Math.round((gross - ins) * 100) / 100 };
+}
+let IMP = null;   // ผลแกะไฟล์ล่าสุด
+async function impParse(file) {
+  toast('กำลังอ่านไฟล์ ' + file.name + '...');
+  const book = prWorkbook(await prUnzip(await file.arrayBuffer()));
+  const people = [];
+  [['โรงน้ำ', 'A', 'C', 'D'], ['ร้านกาแฟ', 'A', 'C', 'D']].forEach(([sh, dc, ic, oc]) => {
+    if (book[sh]) prReadPeople(book[sh], dc, ic, oc).forEach(p => { p.src = sh; people.push(p); });
+  });
+  if (!people.length) { toast('ไม่พบแท็บ "โรงน้ำ"/"ร้านกาแฟ" ในไฟล์นี้'); return; }
+  const remembered = JSON.parse(localStorage.getItem('EX_IMPROLE') || '{}');
+  IMP = people.map(p => {
+    const match = (D.staff || []).find(s => s.name === p.name) || (D.staff || []).find(s => {
+      const clean = x => String(x || '').replace(/^(คุณ|พี่)/, '').trim();
+      const pa = String(p.name).split('/').map(clean), sn = clean(s.name);
+      return sn.length > 1 && pa.some(x => x.length > 1 && (x === sn || x.indexOf(sn) === 0 || sn.indexOf(x) === 0));
+    });
+    return { name: p.name, src: p.src, days: p.days, staffId: match ? (match.id || '') : '',
+             staffName: match ? match.name : '', role: remembered[p.name] || (p.src === 'ร้านกาแฟ' ? 'ร้านกาแฟ' : '') };
+  });
+  impPreview();
+}
+function impPreview() {
+  const roleOpts = r => Object.keys(PR_ROLES).map(k =>
+    `<option ${k === r.role ? 'selected' : ''}>${esc(k)}</option>`).join('');
+  let h = `<div class="hint" style="margin-bottom:8px">เลือกตำแหน่งให้ครบทุกคน แล้วกดนำเข้า — ระบบคิดตามกติกาจริง (สูตรเดียวกับ payroll.js) · รายวันที่เคยแก้มือไว้จะไม่ถูกทับ</div>`;
+  h += '<div class="scroll"><table class="tb"><tr><th>ชื่อในไฟล์</th><th>ตรงกับทะเบียน</th><th>ตำแหน่ง/เรต</th><th class="num">วันสแกน</th><th class="num">สุทธิ (ตัวอย่าง)</th></tr>' +
+    IMP.map((r, i) => {
+      const role = PR_ROLES[r.role];
+      const c = role && !role.skip ? prCalc({ name: r.name, days: r.days }, role, 2) : null;
+      return `<tr><td><b>${esc(r.name)}</b> <span style="color:var(--faint);font-size:.7rem">(${esc(r.src)})</span></td>
+        <td>${r.staffName ? esc(r.staffName) : '<span style="color:var(--red)">ไม่พบ — จะบันทึกตามชื่อในไฟล์</span>'}</td>
+        <td><select data-improle="${i}" style="background:var(--bg);border:1.5px solid var(--line);border-radius:9px;padding:6px;font-family:inherit"><option value="">— เลือก —</option>${roleOpts(r)}</select></td>
+        <td class="num">${r.days.length}</td>
+        <td class="num">${c ? '<b>' + money(c.net) + '</b>' : '—'}</td></tr>`;
+    }).join('') + '</table></div>';
+  h += `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.82rem;cursor:pointer">
+    <input type="checkbox" id="impPay" checked style="width:17px;height:17px"> สร้างงวดเงินเดือน (ร่าง สถานะค้างจ่าย) ให้ด้วยเลย</label>`;
+  h += `<button class="bt bt-main" id="impGo" style="margin-top:12px;width:100%;justify-content:center">📥 นำเข้าข้อมูลรายวัน${IMP.length ? ' (' + IMP.length + ' คน)' : ''}</button>`;
+  $('dtTitle').textContent = '📥 นำเข้าไฟล์สแกนนิ้ว';
+  $('dtBody').innerHTML = h;
+  $('dtMask').classList.add('on');
+  document.querySelectorAll('[data-improle]').forEach(el => el.onchange = () => {
+    IMP[Number(el.dataset.improle)].role = el.value;
+    const mem = JSON.parse(localStorage.getItem('EX_IMPROLE') || '{}');
+    mem[IMP[Number(el.dataset.improle)].name] = el.value;
+    localStorage.setItem('EX_IMPROLE', JSON.stringify(mem));
+    impPreview();
+  });
+  $('impGo').onclick = impGo;
+}
+async function impGo() {
+  const todo = IMP.filter(r => r.role && !PR_ROLES[r.role].skip);
+  if (!todo.length) { toast('เลือกตำแหน่งอย่างน้อย 1 คนก่อนนะคะ'); return; }
+  if (IMP.some(r => !r.role)) { toast('ยังมีคนที่ไม่ได้เลือกตำแหน่ง — เลือกให้ครบ หรือเลือก "ไม่นำเข้าคนนี้"'); return; }
+  const b = $('impGo'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า...';
+  try {
+    const rows = [];
+    const drafts = [];
+    todo.forEach(r => {
+      const role = PR_ROLES[r.role];
+      const c = prCalc({ name: r.name, days: r.days }, role, 2);
+      const nm = r.staffName || r.name;
+      c.days.forEach(d => rows.push(Object.assign({ staffId: r.staffId, name: nm }, d)));
+      const firstDay = Math.min(...c.days.map(d => Number(d.d.slice(8))));
+      const mk = c.days[0].d.slice(0, 7);
+      drafts.push({ name: nm, staffId: r.staffId, period: mk + '-' + (firstDay >= 16 ? '2' : '1'),
+        days: c.paidDays, base: c.base, ot: c.otPay, bonus: c.bonus,
+        dLate: c.latePay, dAbsent: c.dAbsent, dIns: c.ins });
+    });
+    const res = await fetch(GAS, { method: 'POST', redirect: 'follow',
+      body: new URLSearchParams({ action: 'attImport', key: KEY, rows: JSON.stringify(rows) }) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.msg || 'นำเข้าไม่สำเร็จ');
+    let payMsg = '';
+    if ($('impPay').checked) {
+      for (const d of drafts) {
+        await api({ action: 'hrPay', id: '', staffId: d.staffId, name: d.name, period: d.period,
+          days: d.days, base: d.base, ot: d.ot, bonus: d.bonus,
+          dLate: d.dLate, dAbsent: d.dAbsent, dIns: d.dIns, dOther: 0, status: 'ค้างจ่าย', note: 'นำเข้าจากไฟล์สแกน' });
+      }
+      payMsg = ' + สร้างร่างงวดเงินเดือน ' + drafts.length + ' คน';
+    }
+    toast('✅ ' + (j.msg || 'นำเข้าแล้ว') + payMsg);
+    $('dtMask').classList.remove('on');
+    load();
+  } catch (e) { toast('⚠️ ' + e.message); }
+  b.disabled = false; b.textContent = '📥 นำเข้าข้อมูลรายวัน';
+}
+
 // ── 👥 เจาะเงินเดือนงวดนี้ (มาจากโมดูล HR ชีต HR_Payroll) ──
 function payrollDrill() {
   const P = D.payroll || { list: [] };
@@ -982,7 +1235,7 @@ function hrSectionHtml() {
       <button class="bt ${hrTab === 'list' ? 'bt-main' : 'bt-gray'}" data-hrtab="list">📋 ทะเบียน</button>
       <button class="bt ${hrTab === 'payroll' ? 'bt-main' : 'bt-gray'}" data-hrtab="payroll">💵 เงินเดือน</button>
       <span style="flex:1"></span>
-      ${isCeo() ? '<button class="bt bt-main" id="hrAdd">＋ เพิ่มพนักงาน</button>' : ''}</div>`;
+      ${isCeo() ? '<button class="bt bt-gray" id="impBtn">📥 นำเข้าไฟล์สแกน</button><button class="bt bt-main" id="hrAdd">＋ เพิ่มพนักงาน</button>' : ''}</div>`;
   }
   if (hrTab === 'payroll' && canMoney()) { h += payrollHtml(); h += '</div>'; return h; }
 
@@ -1008,6 +1261,7 @@ function bindHr() {
   document.querySelectorAll('[data-hrtab]').forEach(b => b.onclick = () => { hrTab = b.dataset.hrtab; if (hrTab === 'payroll') loadPayroll(); else render(); });
   document.querySelectorAll('[data-hr]').forEach(tr => tr.onclick = () => openStaff(tr.dataset.hr));
   if ($('hrAdd')) $('hrAdd').onclick = () => openStaffForm(null);
+  if ($('impBtn')) $('impBtn').onclick = () => $('impFile').click();
   if ($('hrToggleInactive')) $('hrToggleInactive').onclick = () => { hrShowInactive = !hrShowInactive; render(); };
   bindPayroll();
 }
@@ -1058,6 +1312,23 @@ function renderStaffDetail(j) {
       (ceo ? `<td><button class="bt bt-red" style="padding:4px 9px;font-size:.7rem" data-lvdel="${esc(l.id)}">ลบ</button></td>` : '') + '</tr>').join('') + '</table></div>'
     : '<div class="empty" style="padding:12px">ยังไม่มีวันลา</div>';
   h += '</div>';
+  // 📆 การทำงานรายวัน (จากไฟล์สแกน + แก้มือ) — CEO/กรรมการ
+  if (j.attendance) {
+    const att = j.attendance;
+    h += `<div class="sec" style="padding:12px 14px"><h2 style="font-size:.85rem">📆 การทำงานรายวัน
+      ${ceo ? '<button class="bt bt-gray" style="padding:5px 10px;font-size:.72rem;margin-left:auto" id="atAdd">＋ เพิ่มวัน</button>' : ''}</h2>
+      <div class="hint">${att.length ? 'จากไฟล์สแกนนิ้ว + ที่แก้มือ (✏️)' + (ceo ? ' · แตะวันเพื่อแก้ไข — ระบบคิดเงินใหม่ให้' : '') : ''}</div>`;
+    h += att.length ? '<div class="scroll"><table class="tb"><tr><th>วันที่</th><th>เข้า–ออก</th><th>สถานะ</th><th class="num">สาย/ออกก่อน</th><th class="num">OT</th><th class="num">รวมวัน</th></tr>' +
+      att.map(a => `<tr ${ceo ? 'data-att=\'' + esc(JSON.stringify(a)) + '\' style="cursor:pointer"' : ''}>
+        <td style="white-space:nowrap">${esc(a.d.slice(8) + '/' + a.d.slice(5, 7))}${a.edited ? ' ✏️' : ''}</td>
+        <td style="white-space:nowrap">${a.tin || a.tout ? esc((a.tin || '—') + '–' + (a.tout || '—')) : '—'}</td>
+        <td><span class="pill ${a.st === 'มา' ? 'p-green' : (a.st === 'ขาด' ? 'p-red' : 'p-gray')}">${esc(a.st)}</span>${a.note ? '<div style="font-size:.66rem;color:var(--faint)">' + esc(a.note) + '</div>' : ''}</td>
+        <td class="num">${a.lateMin || a.earlyMin ? '<span style="color:var(--red)">' + (a.lateMin ? 'สาย ' + a.lateMin : '') + (a.earlyMin ? ' ออกก่อน ' + a.earlyMin : '') + ' น.</span>' : '—'}</td>
+        <td class="num">${a.otUnits ? a.otUnits + ' ยูนิต' + (a.otPay ? '<div style="font-size:.66rem;color:var(--faint)">+' + money(a.otPay) + '</div>' : '') : '—'}</td>
+        <td class="num"><b>${a.total ? money(a.total) : '—'}</b>${a.latePay ? '<div style="font-size:.66rem;color:var(--red)">-' + money(a.latePay) + '</div>' : ''}</td></tr>`).join('') +
+      '</table></div>' : `<div class="empty" style="padding:12px">ยังไม่มีบันทึกรายวัน${ceo ? ' — กดปุ่ม 📥 นำเข้าไฟล์สแกน ในหมวดพนักงาน หรือ ＋ เพิ่มวัน' : ''}</div>`;
+    h += '</div>';
+  }
   // ประวัติงาน
   h += `<div class="sec" style="padding:12px 14px"><h2 style="font-size:.85rem">🗂️ ประวัติงานล่าสุด</h2><div class="hint">รวมจากทุกระบบที่บันทึกชื่อไว้ (ผลิต/ออเดอร์/ส่งของ/ขาย)</div>`;
   h += (j.history || []).length ? j.history.slice(0, 40).map(x => `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:.8rem">
@@ -1072,6 +1343,8 @@ function renderStaffDetail(j) {
   if ($('hrEditBtn')) $('hrEditBtn').onclick = () => openStaffForm(s);
   if ($('hrPayBtn')) $('hrPayBtn').onclick = () => openPayForm({ staffId: s.id, name: s.name, salary: s.salary, workDays: s.workDaysMonth });
   if ($('hrLeaveAdd')) $('hrLeaveAdd').onclick = () => openLeaveForm(s);
+  if ($('atAdd')) $('atAdd').onclick = () => openAttForm(s, null);
+  document.querySelectorAll('[data-att]').forEach(tr => tr.onclick = () => openAttForm(s, JSON.parse(tr.dataset.att)));
   document.querySelectorAll('[data-lvdel]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     const r = await api({ action: 'hrLeaveDel', id: b.dataset.lvdel });
@@ -1109,6 +1382,27 @@ async function saveStaffForm() {
     if (r.ok) { $('sfMask').classList.remove('on'); $('hrMask').classList.remove('on'); await load(); }
   } catch (e) { toast(e.message); }
   b.disabled = false; b.textContent = 'บันทึก';
+}
+
+// ── 📆 ฟอร์มแก้บันทึกรายวัน (CEO) — เซิร์ฟเวอร์คิดสาย/OT/ค่าแรงใหม่ตามกติกา ──
+function openAttForm(s, a) {
+  $('atMask').classList.add('on');
+  $('atTitle').textContent = '📆 บันทึกรายวัน — ' + s.name;
+  $('at_staff').value = s.id || ''; $('at_name').value = s.name; $('at_id').value = a ? a.id : '';
+  $('at_date').value = a ? a.d : new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+  $('at_st').value = a ? (a.st || 'มา') : 'มา';
+  $('at_in').value = a ? (a.tin || '') : ''; $('at_out').value = a ? (a.tout || '') : '';
+  $('at_note').value = a ? (a.note || '') : '';
+}
+async function saveAttForm() {
+  const b = $('at_save'); b.disabled = true; const old = b.innerHTML; b.innerHTML = '<span class="spin"></span>';
+  try {
+    const r = await api({ action: 'attSave', id: $('at_id').value, staffId: $('at_staff').value, name: $('at_name').value,
+      date: $('at_date').value, st: $('at_st').value, tin: $('at_in').value, tout: $('at_out').value, note: $('at_note').value.trim() });
+    toast(r.msg || (r.ok ? 'บันทึกแล้ว' : 'ไม่สำเร็จ'));
+    if (r.ok) { $('atMask').classList.remove('on'); openStaff($('at_staff').value || $('at_name').value); }
+  } catch (e) { toast(e.message); }
+  b.disabled = false; b.innerHTML = old;
 }
 
 // ── ฟอร์มบุ๊ควันลา ──
@@ -1348,6 +1642,11 @@ $('py_save').onclick = () => savePayForm(false);
 $('py_paid').onclick = () => savePayForm(true);
 $('py_half').onchange = pyHalfGuard;
 $('dtClose').onclick = () => $('dtMask').classList.remove('on');
+// 📆 รายวัน + 📥 นำเข้าไฟล์สแกน
+$('at_close').onclick = () => $('atMask').classList.remove('on');
+$('at_save').onclick = saveAttForm;
+$('atMask').addEventListener('click', e => { if (e.target === $('atMask')) $('atMask').classList.remove('on'); });
+$('impFile').onchange = e => { if (e.target.files[0]) impParse(e.target.files[0]).catch(x => toast('⚠️ ' + x.message)); e.target.value = ''; };
 // 💸 รายจ่าย
 $('ex_close').onclick = () => $('exMask').classList.remove('on');
 $('ex_save').onclick = () => saveExpense(false);
