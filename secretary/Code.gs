@@ -1794,7 +1794,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-22b';
+const CODE_VERSION = '2026-08-23a';
 
 function healthCheck() {
   const L = [];
@@ -3021,7 +3021,7 @@ function execDashboard(key, month) {
       try {
         let paid = 0, due = 0; const plist = [];
         hrRowsByHead('HR_Payroll').forEach(function (p) {
-          const per = String(p['งวด'] || '').slice(0, 7);
+          const per = hrNormPeriod(p['งวด']).slice(0, 7);
           if (per !== monthPrefix) return;
           const net = execNum(p['สุทธิ']); if (!net) return;
           const isPaid = /จ่ายแล้ว/.test(String(p['สถานะ'] || ''));
@@ -3267,6 +3267,33 @@ function hrRowsByHead(name) {
     });
   } catch (e) { console.error('hrRowsByHead ' + name + ': ' + e); return []; }
 }
+// งวดในชีตมาได้หลายแบบ: "2026-08-1" (มาตรฐานแอป) หรือ "1–16 ส.ค. 69" (แชทเงินเดือนกรอกมือ) → แปลงเป็นมาตรฐานเสมอ
+function hrNormPeriod(v) {
+  const s = String(v || '').trim();
+  if (/^\d{4}-\d{2}(-\d)?$/.test(s)) return s;
+  const months = { 'ม.ค': '01', 'ก.พ': '02', 'มี.ค': '03', 'เม.ย': '04', 'พ.ค': '05', 'มิ.ย': '06',
+                   'ก.ค': '07', 'ส.ค': '08', 'ก.ย': '09', 'ต.ค': '10', 'พ.ย': '11', 'ธ.ค': '12' };
+  const m = s.match(/^(\d{1,2})\s*[–\-]\s*\d{1,2}\s+(\S+?)\.?\s+(\d{2,4})$/);
+  if (!m) return s;
+  const mo = months[m[2].replace(/\.$/, '')];
+  if (!mo) return s;
+  let y = Number(m[3]); if (y < 100) y += 2500; if (y > 2400) y -= 543;
+  return y + '-' + mo + '-' + (Number(m[1]) >= 16 ? '2' : '1');   // เริ่มวัน ≥16 = ครึ่งหลัง
+}
+// wanted แบบมาตรฐาน: "yyyy-MM" (ทั้งเดือน = จับทุกงวดในเดือน) หรือ "yyyy-MM-1/2" (งวดเป๊ะ)
+function hrPeriodMatch(rowPer, wanted) {
+  const n = hrNormPeriod(rowPer);
+  return String(wanted).length > 7 ? n === wanted : n.indexOf(wanted) === 0;
+}
+// เทียบชื่อแบบหลวม: ตัดคำนำหน้า (คุณ/พี่) + รองรับ "ชื่อจริง/ชื่อเล่น" — "คุณซาย" จับ "ศุภัชญา/ซายน์" ได้
+function hrNameMatch(a, b) {
+  const clean = function (x) { return String(x || '').replace(/^(คุณ|พี่)/, '').trim(); };
+  const pa = String(a || '').split('/').map(clean).filter(String);
+  const pb = String(b || '').split('/').map(clean).filter(String);
+  return pa.some(function (x) {
+    return pb.some(function (y) { return x.length > 1 && y.length > 1 && (x === y || x.indexOf(y) === 0 || y.indexOf(x) === 0); });
+  });
+}
 function hrDays(a, b) { // จำนวนวันรวมปลายทาง (a<=b)
   const d1 = new Date(a), d2 = new Date(b);
   if (isNaN(d1) || isNaN(d2)) return 0;
@@ -3403,7 +3430,7 @@ function hrStaffDetail(key, staffId) {
       }).sort(function (a, b) { return b.from.localeCompare(a.from); });
     const out = { ok: true, role: role, staff: s, history: hist2.slice(0, 60), leaves: leaves };
     if (execCanMoney(role)) {
-      out.payroll = hrRowsByHead('HR_Payroll').filter(function (p) { return String(p['Staff_ID'] || '').trim() === s.id || String(p['ชื่อ'] || '').trim() === nm; })
+      out.payroll = hrRowsByHead('HR_Payroll').filter(function (p) { return String(p['Staff_ID'] || '').trim() === s.id || hrNameMatch(p['ชื่อ'], nm); })
         .map(function (p) {
           return { id: String(p['Pay_ID'] || ''), period: String(p['งวด'] || ''), days: execNum(p['วันทำงาน']),
             base: execNum(p['ฐาน']), ot: execNum(p['โอที']), bonus: execNum(p['โบนัส']), deduct: execNum(p['หัก']),
@@ -3517,9 +3544,15 @@ function hrSavePayroll(key, p) {
     const paidAt = status === 'จ่ายแล้ว' ? (p.paidAt || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd')) : '';
     const v = s.getDataRange().getValues();
     let id = String(p.id || '').trim(), ri = -1;
-    if (id) for (let i = 1; i < v.length; i++) if (String(v[i][0]) === id) { ri = i; break; }
+    // Pay_ID อาจซ้ำกันหลายแถว (แชทเงินเดือนใช้เลขเดียวทั้งงวด) → ต้องเทียบคนประกอบเสมอ
+    const sameStaff = function (i) {
+      const rid = String(v[i][2] || '').trim(), sid = String(p.staffId || '').trim();
+      if (rid && sid) return rid === sid;
+      return hrNameMatch(v[i][3], p.name) || String(v[i][3] || '').trim() === String(p.name || '').trim();
+    };
+    if (id) for (let i = 1; i < v.length; i++) if (String(v[i][0]) === id && sameStaff(i)) { ri = i; break; }
     if (ri < 0) { // กันงวดซ้ำคนเดียวกัน (งวดครึ่งเดือน "yyyy-MM-1/2" แยกกันเอง ไม่ชนกัน)
-      for (let i = 1; i < v.length; i++) if (String(v[i][1]) === String(p.period) && String(v[i][2]) === String(p.staffId)) { ri = i; id = String(v[i][0]); break; }
+      for (let i = 1; i < v.length; i++) if (hrPeriodMatch(v[i][1], hrNormPeriod(p.period)) && sameStaff(i)) { ri = i; id = String(v[i][0]); break; }
     }
     if (!id) id = 'PAY' + Utilities.formatDate(new Date(), 'GMT+7', 'yyMMddHHmmss');
     // เขียนตามชื่อหัวคอลัมน์ (ชีตแต่ละยุคมีคอลัมน์ไม่เท่ากัน)
@@ -3552,7 +3585,7 @@ function hrPayAllPeriod(key, period) {
     const today = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
     let n = 0;
     for (let i = 1; i < v.length; i++) {
-      if (String(v[i][iPer]) !== per) continue;
+      if (!hrPeriodMatch(v[i][iPer], hrNormPeriod(per))) continue;
       if (/จ่ายแล้ว/.test(String(v[i][iSt] || ''))) continue;
       s.getRange(i + 1, iSt + 1).setValue('จ่ายแล้ว');
       if (iPaid >= 0) s.getRange(i + 1, iPaid + 1).setValue(today);
@@ -3569,11 +3602,17 @@ function hrPayrollMonth(key, period) {
   try {
     const per = String(period || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM'));
     const staff = hrStaffList('ceo').filter(function (s) { return s.active; });
-    const rows = hrRowsByHead('HR_Payroll').filter(function (p) { return String(p['งวด']) === per; });
-    const byId = {}; rows.forEach(function (p) { byId[String(p['Staff_ID'] || '').trim() || String(p['ชื่อ'] || '')] = p; });
+    const rows = hrRowsByHead('HR_Payroll').filter(function (p) { return hrPeriodMatch(p['งวด'], per); });
+    const used = {};
     let total = 0, paid = 0;
     const list = staff.map(function (s) {
-      const p = byId[s.id] || byId[s.name];
+      // จับคู่: Staff_ID ตรง > ชื่อตรง > ชื่อหลวม (รองรับ "ชื่อจริง/ชื่อเล่น" ที่แชทเงินเดือนกรอก)
+      let p = null;
+      for (let i = 0; i < rows.length; i++) {
+        if (used[i]) continue;
+        const rid = String(rows[i]['Staff_ID'] || '').trim(), rnm = String(rows[i]['ชื่อ'] || '').trim();
+        if ((s.id && rid === s.id) || rnm === s.name || hrNameMatch(rnm, s.name)) { p = rows[i]; used[i] = true; break; }
+      }
       const o = { staffId: s.id, name: s.name, role: s.role, salary: s.salary || 0, payType: s.payType || '',
         workDays: s.workDaysMonth, leaveDays: s.leaveDaysYear };
       if (p) {
@@ -3586,6 +3625,19 @@ function hrPayrollMonth(key, period) {
         total += o.net; if (o.status === 'จ่ายแล้ว') paid += o.net;
       } else { o.status = ''; total += (s.salary || 0); }
       return o;
+    });
+    // แถวเงินเดือนที่จับคู่กับทะเบียนไม่ได้ (คนยังไม่อยู่ในชีต Staff) — ต้องโชว์ ไม่ใช่หายเงียบ
+    rows.forEach(function (p, i) {
+      if (used[i]) return;
+      const o = { staffId: String(p['Staff_ID'] || ''), name: String(p['ชื่อ'] || ''), role: '', salary: 0,
+        payId: String(p['Pay_ID']), days: execNum(p['วันทำงาน']), base: execNum(p['ฐาน']), ot: execNum(p['โอที']),
+        bonus: execNum(p['โบนัส']), deduct: execNum(p['หัก']), net: execNum(p['สุทธิ']), status: String(p['สถานะ'] || ''),
+        paidAt: execDateKey(p['วันที่จ่าย']), note: String(p['หมายเหตุ'] || ''),
+        dLate: execNum(p['หักสาย']), dAbsent: execNum(p['หักขาด']), dIns: execNum(p['หักประกัน']), dOther: execNum(p['หักอื่นๆ']),
+        otUnits: execNum(p['OT(ยูนิต)']), otRate: execNum(p['เรทOT/ยูนิต']),
+        pos: execNum(p['ค่าตำแหน่ง']), car: execNum(p['ค่าดูแลรถ']), payVia: String(p['จ่ายด้วย'] || ''), noStaff: true };
+      total += o.net; if (o.status === 'จ่ายแล้ว') paid += o.net;
+      list.push(o);
     });
     return { ok: true, period: per, list: list, total: total, paid: paid };
   } catch (e) { return { ok: false, error: String(e) }; }
