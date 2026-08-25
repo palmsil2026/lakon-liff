@@ -350,8 +350,39 @@ function jsonOut(obj) {
 //  ปุ่มบนบอร์ด: ยกเลิกงาน / สั่งทีม AI เริ่มทันที
 // ════════════════════════════════════════════════════════════
 // คืนข้อความแจ้งผลไปโชว์บนบอร์ด (ข้อความว่าง = ไม่ต้องโชว์)
+// 🗑️ ยกเลิกทั้งโปรเจกต์ (การ์ดใหญ่) — ปิดทุกขั้นที่ยังไม่จบในครั้งเดียว
+// ref ที่ส่งมาคือรหัสโปรเจกต์ (คอลัมน์ O) ไม่ใช่รหัสงาน
+function boardCancelProject(pid) {
+  try {
+    const sheet = reqSheet();
+    if (!sheet) return '⚠️|ยังไม่ได้ตั้งค่าชีตงาน';
+    pid = String(pid || '').trim();
+    if (!pid) return '⚠️|ไม่พบรหัสโปรเจกต์';
+    ensureTimeCols(sheet);
+    const last = sheet.getLastRow();
+    if (last < 2) return '⚠️|ไม่พบงานในโปรเจกต์นี้';
+    const vals = sheet.getRange(2, 1, last - 1, Math.max(21, sheet.getLastColumn())).getValues();
+    let n = 0, skipped = 0, title = '';
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][14] || '').trim() !== pid) continue;   // O = รหัสโปรเจกต์
+      if (!title) title = String(vals[i][15] || '');            // P = ชื่อโปรเจกต์
+      const st = String(vals[i][2] || '');
+      if (/เสร็จ|ปิด|ยกเลิก/.test(st)) { skipped++; continue; }
+      const row = i + 2;
+      sheet.getRange(row, 3).setValue('ยกเลิก');
+      sheet.getRange(row, 21).setValue(new Date());
+      logRow(['ยกเลิกโปรเจกต์(บอร์ด)', '', String(vals[i][0] || ''), 'โปรเจกต์ ' + pid + ' · สถานะเดิม: ' + st]);
+      n++;
+    }
+    if (!n) return skipped ? '⚠️|โปรเจกต์นี้ปิดไปหมดแล้ว (' + skipped + ' ขั้น)' : '⚠️|ไม่พบงานในโปรเจกต์ ' + pid;
+    return '✅|ยกเลิกโปรเจกต์' + (title ? ' "' + title + '"' : ' ' + pid) + ' แล้ว — ปิด ' + n + ' ขั้น' +
+           (skipped ? ' (อีก ' + skipped + ' ขั้นจบไปก่อนแล้ว)' : '');
+  } catch (e) { return '⚠️|ยกเลิกโปรเจกต์ไม่สำเร็จ: ' + e; }
+}
+
 function boardAction(action, ref) {
   try {
+    if (action === 'cancelPrj') return boardCancelProject(ref);
     const sheet = reqSheet();
     if (!sheet) return '⚠️|ยังไม่ได้ตั้งค่าชีตงาน';
     const row = findRefRow(sheet, ref);
@@ -1804,7 +1835,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-23c';
+const CODE_VERSION = '2026-08-23d';
 
 function healthCheck() {
   const L = [];

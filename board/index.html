@@ -247,7 +247,7 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
   <div class="chat-sh">
     <div class="chat-hd">
       <div class="av">🗓️</div>
-      <div class="t"><b>คุณเลขา</b><div>คนเดียวกับในไลน์ · ความจำต่อเนื่อง · สั่งงาน/ถามบอร์ด/แปะไอเดียได้เลย</div></div>
+      <div class="t"><b>คุณเลขา</b><div>คนเดียวกับในไลน์ · ความจำต่อเนื่อง · สั่งงาน/ถามบอร์ด/แปะไอเดียได้เลย <span id="chatVer" style="opacity:.55"></span></div></div>
       <button class="chat-x" id="chatX">✕</button>
     </div>
     <div class="chat-log" id="chatLog"></div>
@@ -297,6 +297,8 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
 <script>
 // ══════════ Mission Board — หน้าบ้านอยู่ GitHub Pages (เร็ว/นิ่ง) ข้อมูลมาจาก GAS ══════════
 const GAS = 'https://script.google.com/macros/s/AKfycbwgxZ_yxK21-GcB0yuZSFw-uT7yr9J322ZyMT2H3QsHgcnEuvvhUP3I-yJH3hq9dC9J/exec';
+// เวอร์ชันหน้าเว็บ — โชว์ในหัวห้องแชท เอาไว้เช็คว่าเบราว์เซอร์โหลดของใหม่แล้วจริงไหม (เจอปัญหาแคชหน้าเก่ามาแล้ว)
+const BOARD_VER = '23d';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -336,12 +338,12 @@ function shortTitle(t) {
 }
 
 // ══════════ เรียก GAS (GET + retry — GAS ตอบ JSON พร้อม CORS หลัง redirect) ══════════
-async function api(params, retries = 1) {
+async function api(params, retries = 1, timeoutMs) {
   const qs = new URLSearchParams(Object.assign({ key: KEY }, params)).toString();
   for (let i = 0; ; i++) {
     try {
       const ctl = new AbortController();
-      const tm = setTimeout(() => ctl.abort(), 25000);
+      const tm = setTimeout(() => ctl.abort(), timeoutMs || 25000);
       const res = await fetch(GAS + '?' + qs, { signal: ctl.signal, redirect: 'follow' });
       clearTimeout(tm);
       const j = await res.json();
@@ -471,8 +473,11 @@ function render() {
     const steps = TASKS.filter(x => x.project === t.project && !canc(x)).sort((a,b) => a.step - b.step);
     if (!steps.length) return;
     const dn = steps.filter(done).length, pc = Math.round(dn / steps.length * 100);
+    const openSteps = steps.filter(s => !done(s)).length;
     ph += `<div class="prj"><div class="prj-h"><span>📁</span><span class="t">${esc(t.projectTitle || t.project)}</span>
-      <span class="pc">${dn}/${steps.length}</span></div>
+      <span class="pc">${dn}/${steps.length}</span>` +
+      (MODE === 'owner' && openSteps ? `<button class="bt bt-red" data-cancelprj="${esc(t.project)}" title="ยกเลิกทั้งโปรเจกต์">✕</button>` : '') +
+      `</div>
       <div class="bar"><i style="width:${pc}%"></i></div><div class="map">` +
       steps.map(s => {
         const cls = done(s) ? 'done' : (s.status === 'กำลังทำ (AI)' ? 'doing' : '');
@@ -488,6 +493,21 @@ function render() {
   $('projects').innerHTML = ph;
   document.querySelectorAll('.node').forEach(el => {
     el.querySelector('.nm').onclick = () => { const r = el.dataset.ref; OPEN[r] = !OPEN[r]; render(); };
+  });
+  // ยกเลิกทั้งโปรเจกต์ (การ์ดใหญ่) — แตะ 2 ครั้งยืนยัน เพราะปิดหลายขั้นพร้อมกัน
+  document.querySelectorAll('[data-cancelprj]').forEach(el => {
+    el.onclick = ev => {
+      ev.stopPropagation();
+      const pid = el.dataset.cancelprj;
+      if (armCancel !== 'prj' + pid) {
+        armCancel = 'prj' + pid; el.classList.add('arm');
+        el.textContent = '✕ ยกเลิกทั้งโปรเจกต์? แตะย้ำ';
+        setTimeout(() => { if (armCancel === 'prj' + pid) { armCancel = null; render(); } }, 3500);
+        return;
+      }
+      armCancel = null;
+      doAction('cancelPrj', pid, el);
+    };
   });
 
   // ── งานเดี่ยว → การ์ดย่อ กดขยาย ──
@@ -629,6 +649,10 @@ async function doAction(act, ref, el) {
     toast(j.msg || (j.ok ? 'สำเร็จ' : 'ไม่สำเร็จ'), j.ok);
     if (j.ok) {
       const APPROVE_DEPTS = ['coder', 'data'];
+      // ยกเลิกทั้งโปรเจกต์: ref ที่ส่งไปคือรหัสโปรเจกต์ → ปิดทุกขั้นที่ยังไม่จบบนจอทันที
+      if (act === 'cancelPrj') {
+        TASKS.forEach(t => { if (t.project === ref && !/เสร็จ|ปิด|ยกเลิก/.test(t.status || '')) t.status = 'ยกเลิก'; });
+      }
       TASKS.forEach(t => { if (t.ref === ref) {
         if (act === 'cancel') t.status = 'ยกเลิก';
         if (act === 'runnow' || act === 'approve') t.status = 'รอทีม AI';
@@ -701,6 +725,7 @@ function chatRender() {
     if (m && m.retry) { CHAT.splice(Number(b.dataset.requery), 1); chatSend(m.retry); }
   });
 }
+if ($('chatVer')) $('chatVer').textContent = '· v' + BOARD_VER;
 $('chatFab').onclick = () => {
   if (!CHAT.length) CHAT.push({ r: 'ai', t: 'สวัสดีค่ะคุณปาล์ม 🙋‍♀️ ดิฉันคุณเลขา คนเดียวกับในไลน์เลยค่ะ\nถามเรื่องงานบนบอร์ด สั่งงานใหม่ แปะไอเดีย ให้จำข้อมูล หรือส่งประกาศเข้ากลุ่ม — พิมพ์มาได้เลยนะคะ' });
   $('chatMask').classList.add('on');
@@ -724,12 +749,17 @@ async function chatSend(resend) {
     ty.textContent = s < 12 ? 'กำลังพิมพ์...' : 'กำลังคิดอยู่นะคะ... ' + s + ' วิ' + (s > 45 ? ' (คำตอบยาวใช้เวลาหน่อยค่ะ)' : '');
   }, 1000);
   try {
-    const j = await apiPost({ action: 'chat', q: q });
+    let j;
+    try {
+      j = await apiPost({ action: 'chat', q: q });          // ทางหลัก: POST (คำถามยาวได้ไม่จำกัด)
+    } catch (ePost) {
+      j = await api({ action: 'chat', q: q }, 0, 180000);   // GAS รุ่นก่อน 23c ยังไม่รับ POST → ถอยไปใช้ GET แบบรอนาน
+    }
     CHAT.push({ r: 'ai', t: j.ok ? j.reply : ('⚠️ ' + (j.error || 'ไม่สำเร็จ ลองใหม่นะคะ')), retry: j.ok ? '' : q });
   } catch (e) {
     const s = Math.round((Date.now() - t0) / 1000);
     CHAT.push({ r: 'ai', t: s >= 175 ? '⚠️ คิดนานเกิน 3 นาทีค่ะ — ลองถามใหม่แบบซอยเป็นข้อ ๆ หรือสั่งทางไลน์แทนนะคะ'
-                                     : '⚠️ เชื่อมต่อไม่สำเร็จ (' + s + ' วิ) ลองใหม่อีกครั้งนะคะ', retry: q });
+                                     : '⚠️ เชื่อมต่อไม่สำเร็จ (' + s + ' วิ · เวอร์ชันหน้า ' + BOARD_VER + ') ลองใหม่อีกครั้งนะคะ', retry: q });
   }
   clearInterval(tick);
   CHAT = CHAT.slice(-40);
