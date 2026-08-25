@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QR รีวิว Google Maps — Old Days House</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#F4F1EA; --card:#FFFFFF; --raise:#EEF1F6; --line:#E0D9CC;
+  --ink:#1B2B3B; --sub:#66788F; --faint:#9AA6B6;
+  --gold:#C8912E; --teal:#1F9484; --red:#D64B3F; --green:#2E9C5E; --navy:#1B3558;
+  --shadow:rgba(27,43,59,.10); --r:16px;
+}
+body{font-family:Prompt,system-ui,sans-serif;background:var(--bg);color:var(--ink);
+  padding:16px 20px 60px;max-width:1100px;margin:0 auto;font-size:15px}
+button{font-family:inherit;border:none;cursor:pointer;background:none;color:inherit}
+a{color:var(--navy)}
+
+.hd{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.hd .logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(140deg,var(--navy),var(--gold));
+  display:grid;place-items:center;font-size:22px;color:#fff;flex:0 0 44px}
+.hd h1{font-size:1.15rem;font-weight:800;line-height:1.25}
+.hd h1 small{display:block;font-size:.66rem;font-weight:500;color:var(--sub);letter-spacing:.5px;margin-top:1px}
+
+.sec{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.sec h2{font-size:.95rem;font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:7px}
+.sec .hint{font-size:.72rem;color:var(--sub);margin-bottom:12px;line-height:1.55}
+.grid2{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
+@media(min-width:880px){.grid2{grid-template-columns:1.05fr .95fr}}
+.grid2>.sec{min-width:0}
+
+label{display:block;font-size:.72rem;font-weight:600;color:var(--sub);margin:12px 0 5px}
+label.first{margin-top:0}
+input[type=text],textarea{width:100%;font-family:inherit;font-size:.88rem;color:var(--ink);
+  background:var(--raise);border:1.5px solid var(--line);border-radius:11px;padding:10px 12px;resize:vertical}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--navy)}
+textarea{min-height:74px;line-height:1.5;word-break:break-all}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chk{display:flex;align-items:center;gap:7px;font-size:.76rem;color:var(--sub);font-weight:500;margin-top:10px;cursor:pointer}
+.chk input{width:17px;height:17px;accent-color:var(--navy);flex:0 0 17px}
+
+.btn{font-size:.8rem;font-weight:700;padding:10px 15px;border-radius:11px;background:var(--raise);
+  border:1.5px solid var(--line);transition:transform .12s}
+.btn:active{transform:scale(.96)}
+.btn.pri{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.gold{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn.sm{font-size:.72rem;padding:7px 11px}
+
+.status{font-size:.75rem;font-weight:600;border-radius:11px;padding:10px 12px;margin-top:12px;line-height:1.55;display:none}
+.status.ok{display:block;background:rgba(46,156,94,.12);color:#1d6b40;border:1.5px solid rgba(46,156,94,.3)}
+.status.warn{display:block;background:rgba(200,145,46,.14);color:#8a5f10;border:1.5px solid rgba(200,145,46,.35)}
+.status.err{display:block;background:rgba(214,75,63,.12);color:#98291f;border:1.5px solid rgba(214,75,63,.3)}
+.finalurl{font-size:.7rem;color:var(--sub);word-break:break-all;background:var(--raise);border:1.5px dashed var(--line);
+  border-radius:11px;padding:9px 11px;margin-top:10px;line-height:1.5}
+.warnbox{font-size:.73rem;line-height:1.65;background:rgba(214,75,63,.09);border:1.5px solid rgba(214,75,63,.28);
+  border-radius:12px;padding:11px 12px;margin-top:12px;color:#7d241c}
+.warnbox b{color:#98291f}
+
+/* ── การ์ด/ป้ายตัวอย่าง (สิ่งที่จะพิมพ์) ── */
+.stage{display:grid;place-items:center;background:var(--raise);border-radius:13px;padding:18px;margin-top:4px}
+.cardqr{width:310px;background:#fff;border-radius:18px;padding:22px 20px 18px;text-align:center;
+  box-shadow:0 6px 24px var(--shadow);color:#1B2B3B;position:relative;overflow:hidden}
+.cardqr .t{font-size:1.15rem;font-weight:800;line-height:1.3}
+.cardqr .s{font-size:.78rem;color:#66788F;font-weight:500;margin-top:4px;line-height:1.45}
+.cardqr .qrbox{margin:13px auto 0;width:210px;height:210px}
+.cardqr .qrbox svg{display:block;width:100%;height:100%}
+.cardqr .steps3{margin-top:12px;text-align:left;display:inline-block}
+.cardqr .steps3 div{font-size:.76rem;font-weight:600;line-height:1.5;margin-top:5px;display:flex;gap:7px;align-items:flex-start}
+.cardqr .steps3 .n{flex:0 0 auto;width:1.35em;height:1.35em;border-radius:50%;background:#1B3558;color:#fff;
+  font-size:.78em;display:grid;place-items:center;margin-top:.15em}
+.cardqr .promo{margin-top:13px;background:linear-gradient(120deg,#C8912E,#E0AC4A);color:#fff;
+  font-size:.92rem;font-weight:800;line-height:1.35;border-radius:12px;padding:10px 12px}
+.cardqr .promo .fine{display:block;font-size:.62rem;font-weight:600;opacity:.92;margin-top:3px}
+.cardqr .f{font-size:.66rem;color:#9AA6B6;font-weight:600;margin-top:11px;letter-spacing:.3px}
+.dlrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+ol.steps{margin:0 0 0 18px;font-size:.78rem;color:var(--sub);line-height:1.85}
+ol.steps b{color:var(--ink)}
+code{background:var(--raise);border-radius:6px;padding:1px 5px;font-size:.92em;word-break:break-all}
+.note{font-size:.72rem;color:var(--sub);line-height:1.65;margin-top:10px}
+
+/* ── โหมดพิมพ์ ── */
+@media print{
+  @page{size:A4;margin:10mm}
+  body{background:#fff;padding:0;max-width:none}
+  .noprint,.hd{display:none!important}
+  #sheet{display:block}
+  .cardqr{box-shadow:none;border:1pt dashed #ccc;border-radius:6mm}
+  /* ป้ายโปสเตอร์เต็มหน้า A4 */
+  #sheet.poster{display:grid;place-items:center;min-height:270mm}
+  #sheet.poster .cardqr{width:180mm;padding:14mm 12mm 10mm;border:none}
+  #sheet.poster .t{font-size:40pt}
+  #sheet.poster .s{font-size:16pt;margin-top:6pt}
+  #sheet.poster .qrbox{width:105mm;height:105mm;margin-top:8mm}
+  #sheet.poster .steps3 div{font-size:15pt;margin-top:7pt}
+  #sheet.poster .promo{font-size:24pt;padding:7mm;border-radius:5mm;margin-top:8mm}
+  #sheet.poster .promo .fine{font-size:11pt}
+  #sheet.poster .f{font-size:10pt}
+  /* ป้ายตั้งโต๊ะ A5 — 2 ใบต่อหน้า ตัดครึ่ง */
+  #sheet.tent{display:grid;grid-template-rows:1fr 1fr;gap:5mm;height:275mm}
+  #sheet.tent .cardqr{width:100%;height:100%;padding:7mm;display:flex;flex-direction:column;justify-content:center}
+  #sheet.tent .t{font-size:21pt}
+  #sheet.tent .s{font-size:10.5pt;margin-top:2pt}
+  #sheet.tent .qrbox{width:58mm;height:58mm;margin-top:4mm}
+  #sheet.tent .steps3{margin-top:4mm;align-self:center}
+  #sheet.tent .steps3 div{font-size:9.5pt;margin-top:3pt}
+  #sheet.tent .promo{font-size:14pt;padding:3.5mm;margin-top:4mm;border-radius:4mm}
+  #sheet.tent .promo .fine{font-size:7.5pt}
+  #sheet.tent .f{font-size:7.5pt;margin-top:3mm}
+  /* สติกเกอร์ 6 ดวง */
+  #sheet.six{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,1fr);gap:4mm;height:275mm}
+  #sheet.six .cardqr{padding:5mm 3mm;height:100%;display:flex;flex-direction:column;justify-content:center}
+  #sheet.six .t{font-size:12.5pt}
+  #sheet.six .s{font-size:7.5pt;margin-top:1pt}
+  #sheet.six .qrbox{width:40mm;height:40mm;margin-top:3mm}
+  #sheet.six .steps3{margin-top:3mm;align-self:center}
+  #sheet.six .steps3 div{font-size:6.8pt;margin-top:2pt}
+  #sheet.six .promo{font-size:10pt;padding:2.5mm;margin-top:3mm;border-radius:3mm}
+  #sheet.six .promo .fine{font-size:6pt;margin-top:1pt}
+  #sheet.six .f{font-size:6pt;margin-top:2.5mm}
+}
+#sheet{display:none}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <div class="logo">⭐</div>
+  <h1>QR รีวิว Google Maps — Old Days House<small>สร้างในเครื่อง ไม่ผ่านเว็บคนอื่น · ไม่มีโฆษณา · ไม่มีวันหมดอายุ</small></h1>
+</div>
+
+<div class="grid2 noprint">
+
+  <!-- ── ซ้าย: ตั้งค่า ── -->
+  <div>
+    <div class="sec">
+      <h2>1 · ลิงก์รีวิวของร้าน</h2>
+      <p class="hint">วางได้ทั้ง <b>ลิงก์ขอรีวิว</b> (<code>g.page/r/.../review</code>) · <b>Place ID</b> (ขึ้นต้น <code>ChIJ</code>) · หรือลิงก์ Google Maps ของร้าน<br>ไม่รู้ว่าเอามาจากไหน → ดูวิธี 3 ขั้นตอนด้านล่าง</p>
+      <textarea id="src" placeholder="เช่น https://g.page/r/CxXxXxXxXxXx/review"></textarea>
+      <label class="chk"><input type="checkbox" id="thai"> บังคับหน้ารีวิวเป็นภาษาไทย (เติม <code>&hl=th</code>)</label>
+      <div id="st" class="status"></div>
+      <div id="fu" class="finalurl" style="display:none"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="btnTest">🔍 เปิดทดสอบลิงก์</button>
+        <button class="btn" id="btnCopy">📋 คัดลอกลิงก์</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>2 · ข้อความบนป้าย</h2>
+      <p class="hint">แก้ได้ตามใจ — ตัวอย่างด้านขวาเปลี่ยนตามทันที</p>
+      <label class="first">หัวเรื่อง</label>
+      <input type="text" id="tTitle" maxlength="40">
+      <label>บรรทัดรอง</label>
+      <input type="text" id="tSub" maxlength="70">
+      <label class="chk"><input type="checkbox" id="tSteps" checked> แสดงขั้นตอน 1-2-3 (แตะ 5 ดาว → ใส่รูป → พิมพ์สั้น ๆ)</label>
+      <label>ขั้นตอนที่ 1 / 2 / 3</label>
+      <input type="text" id="tS1" maxlength="46" style="margin-bottom:6px">
+      <input type="text" id="tS2" maxlength="46" style="margin-bottom:6px">
+      <input type="text" id="tS3" maxlength="46">
+      <label>ข้อความใต้ป้าย</label>
+      <input type="text" id="tFoot" maxlength="46">
+    </div>
+
+    <div class="sec">
+      <h2>3 · ป้ายโปรฯ เค้กฟรี 🍰</h2>
+      <p class="hint">แถบสีทองด้านล่างป้าย — ปิดได้ถ้าไม่อยากแจก</p>
+      <label class="chk"><input type="checkbox" id="tPromo" checked> แสดงแถบโปรโมชั่น</label>
+      <label>ข้อความโปรฯ</label>
+      <input type="text" id="tPromoT" maxlength="46">
+      <label>ตัวเล็กใต้โปรฯ (เงื่อนไข)</label>
+      <input type="text" id="tPromoF" maxlength="70">
+      <div class="warnbox">
+        <b>⚠️ ข้อควรรู้ก่อนพิมพ์</b> — นโยบายรีวิวของ Google ห้ามให้ของแลกกับการรีวิว
+        (“Do not offer or accept money, products, or services to write reviews”)
+        ถ้าเขียนป้ายตรง ๆ ว่า <i>“รีวิวแล้วรับเค้กฟรี”</i> เสี่ยงโดนลบรีวิว หรือติดธงที่โปรไฟล์ร้าน
+        <br>ทางที่ปลอดภัยกว่าและได้ผลใกล้เคียง: <b>แจกเค้กให้ทุกคนที่ “ถ่ายรูปมุมนี้”</b> โดยไม่ผูกกับการรีวิว
+        แล้ววาง QR ไว้ข้าง ๆ ให้คนที่อยากรีวิวสแกนเอง
+        <div class="row" style="margin-top:9px">
+          <button class="btn sm" id="safeWord">ใช้ข้อความแบบปลอดภัย</button>
+          <button class="btn sm" id="directWord">ใช้ข้อความแบบตรง ๆ</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>❓ เอาลิงก์รีวิวมาจากไหน</h2>
+      <ol class="steps">
+        <li><b>วิธีที่ชัวร์ที่สุด</b> — เข้าแอป/เว็บ <b>Google Business Profile</b> ด้วยบัญชีเจ้าของร้าน → กด <b>“ขอรีวิว”</b> / “Ask for reviews” → ได้ลิงก์ <code>https://g.page/r/.../review</code> → ก๊อปมาวางช่องที่ 1</li>
+        <li><b>ถ้าหาปุ่มไม่เจอ</b> — เปิด <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener">Place ID Finder</a> ของ Google → พิมพ์ <b>Old Days House</b> → ก๊อป <code>ChIJ...</code> มาวาง</li>
+        <li><b>วางลิงก์ Maps ธรรมดาก็ได้</b> — แต่ QR จะพาไปหน้าร้าน ลูกค้าต้องกดปุ่ม “เขียนรีวิว” เองอีกที (ยอดรีวิวจะได้น้อยกว่า)</li>
+      </ol>
+      <p class="note">⭐ <b>เรื่องดาว 5 ดวงอัตโนมัติ:</b> Google ไม่มีลิงก์ที่ติ๊กดาวมาให้ล่วงหน้าได้ (กันคนปั๊มรีวิว) สิ่งที่ทำได้จริงคือลิงก์แบบ “ขอรีวิว” ที่ <b>เด้งกล่องเขียนรีวิวขึ้นมาทันที</b> ลูกค้าแตะดาวขวาสุด 1 ที = 5 ดาวเลย ป้ายนี้เลยเขียนขั้นตอนกำกับไว้ให้ชัด — เหลือแค่ใส่รูปกับพิมพ์สั้น ๆ ตามที่ต้องการ</p>
+      <p class="note">🔒 หน้านี้สร้าง QR ด้วยโค้ดในเครื่องคุณล้วน ๆ ไม่ส่งข้อมูลออกไปไหน จึง <b>ไม่มีโฆษณา ไม่มีลายน้ำ ไม่มีค่ารายเดือน และลิงก์ไม่มีวันตาย</b> (ต่างจากเว็บสร้าง QR ฟรีทั่วไปที่เป็น QR แบบ redirect ซึ่งวันหนึ่งอาจถูกปิดหรือแทรกโฆษณา)</p>
+    </div>
+  </div>
+
+  <!-- ── ขวา: ตัวอย่าง + ดาวน์โหลด ── -->
+  <div class="sec" style="position:sticky;top:14px">
+    <h2>ตัวอย่าง &amp; ดาวน์โหลด</h2>
+    <p class="hint">สแกนทดสอบด้วยมือถือจริงก่อนสั่งพิมพ์ทุกครั้ง</p>
+    <div class="stage"><div class="cardqr" id="preview">
+      <div class="t" id="pT"></div>
+      <div class="s" id="pS"></div>
+      <div class="qrbox" id="pQR"></div>
+      <div class="steps3" id="pSteps"></div>
+      <div class="promo" id="pPromo"></div>
+      <div class="f" id="pF"></div>
+    </div></div>
+    <div class="dlrow">
+      <button class="btn gold" id="prPoster">🖨️ ป้าย A4 เต็มหน้า</button>
+      <button class="btn" id="prTent">🖨️ ป้ายตั้งโต๊ะ A5 (2 ใบ/หน้า)</button>
+      <button class="btn" id="prSix">🖨️ สติกเกอร์ 6 ดวง</button>
+    </div>
+    <div class="dlrow">
+      <button class="btn pri" id="dlPng">⬇️ QR อย่างเดียว PNG 2048px</button>
+      <button class="btn" id="dlSvg">⬇️ QR อย่างเดียว SVG</button>
+    </div>
+    <p class="note">พิมพ์ = เลือกเครื่องพิมพ์ หรือ “Save as PDF” เอาไฟล์ไปส่งร้านป้าย · PNG/SVG = เอา QR ไปวางในโปสเตอร์ที่ออกแบบเองใน Canva ได้ (SVG ขยายเท่าไหร่ก็ไม่แตก เหมาะกับไวนิล)</p>
+  </div>
+</div>
+
+<!-- กระดาษสำหรับพิมพ์ (โผล่เฉพาะตอนสั่งพิมพ์) -->
+<div id="sheet"></div>
+
+<script src="qrcode-generator.js"></script>
+<script>
+/* ใช้ UTF-8 ตอนแปลงข้อความเป็นไบต์ (ลิงก์ที่มีอักษรไทย/พารามิเตอร์แปลก ๆ จะไม่เพี้ยน) */
+qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+
+var DEFAULTS = {
+  src:'', thai:false,
+  title:'รีวิวให้เราหน่อยน้า',
+  sub:'Old Days House · ใช้เวลาไม่ถึงนาที',
+  steps:true,
+  s1:'สแกน แล้วแตะดาวขวาสุด = ⭐ 5 ดวง',
+  s2:'ใส่รูปที่เพิ่งถ่ายกับเครื่องดื่ม/เค้ก',
+  s3:'พิมพ์สั้น ๆ สัก 1 บรรทัด แล้วโพสต์',
+  foot:'ขอบคุณที่แวะมานะคะ · Old Days House',
+  promo:true,
+  promoT:'ถ่ายรูปมุมนี้ รับเค้กฟรี 1 ชิ้น 🍰',
+  promoF:'ยื่นรูปให้พนักงานดูที่เคาน์เตอร์ · 1 ที่นั่ง 1 สิทธิ์'
+};
+var WORDS={
+  safe:{t:'ถ่ายรูปมุมนี้ รับเค้กฟรี 1 ชิ้น 🍰', f:'ยื่นรูปให้พนักงานดูที่เคาน์เตอร์ · 1 ที่นั่ง 1 สิทธิ์'},
+  direct:{t:'รีวิวเสร็จ รับเค้กฟรี 1 ชิ้น 🍰', f:'โชว์หน้าจอรีวิวให้พนักงานที่เคาน์เตอร์ · 1 ที่นั่ง 1 สิทธิ์'}
+};
+var KEY='olddays-review-qr';
+var $=function(id){return document.getElementById(id)};
+var el={src:$('src'),thai:$('thai'),title:$('tTitle'),sub:$('tSub'),steps:$('tSteps'),
+        s1:$('tS1'),s2:$('tS2'),s3:$('tS3'),foot:$('tFoot'),
+        promo:$('tPromo'),promoT:$('tPromoT'),promoF:$('tPromoF')};
+
+/* ── แปลงสิ่งที่วาง → ลิงก์เขียนรีวิวจริง ── */
+function toReviewUrl(raw){
+  var s=(raw||'').trim();
+  if(!s) return {kind:'empty'};
+  /* Place ID ดิบ */
+  if(/^(ChI|GhI|Ei)[A-Za-z0-9_\-]{10,}$/.test(s))
+    return {kind:'direct', url:'https://search.google.com/local/writereview?placeid='+encodeURIComponent(s),
+            msg:'Place ID ใช้ได้ · QR จะเด้งกล่องเขียนรีวิวให้ลูกค้าทันที'};
+  var u; try{ u=new URL(/^https?:\/\//i.test(s)?s:'https://'+s); }catch(e){ return {kind:'bad'} }
+  var host=u.hostname.replace(/^www\./,'');
+  if(host==='g.page'){
+    if(/^\/r\/[^/]+\/review\/?$/.test(u.pathname))
+      return {kind:'direct', url:u.href, msg:'ลิงก์ขอรีวิวจาก Google Business Profile · เด้งกล่องเขียนรีวิวทันที'};
+    if(/^\/r\/[^/]+\/?$/.test(u.pathname))
+      return {kind:'direct', url:u.origin+u.pathname.replace(/\/$/,'')+'/review',
+              msg:'เติม /review ให้อัตโนมัติแล้ว · เด้งกล่องเขียนรีวิวทันที'};
+  }
+  if(host==='search.google.com'&&u.pathname.indexOf('/local/writereview')===0)
+    return {kind:'direct', url:u.href, msg:'ลิงก์เขียนรีวิวโดยตรง ใช้ได้เลย'};
+  var pid=u.searchParams.get('placeid')||u.searchParams.get('place_id');
+  if(!pid){ var q=u.searchParams.get('q')||''; var m=q.match(/place_id:([A-Za-z0-9_\-]+)/); if(m) pid=m[1]; }
+  if(pid) return {kind:'direct', url:'https://search.google.com/local/writereview?placeid='+encodeURIComponent(pid),
+                  msg:'ดึง Place ID จากลิงก์ได้แล้ว · QR จะเด้งกล่องเขียนรีวิวทันที'};
+  if(/google\.[a-z.]+$/.test(host)||host==='maps.app.goo.gl'||host==='goo.gl')
+    return {kind:'indirect', url:u.href,
+            msg:'ลิงก์นี้พาไป “หน้าร้าน” ไม่ได้เด้งกล่องเขียนรีวิว — QR ใช้ได้ แต่ลูกค้าต้องกดปุ่มเขียนรีวิวเองอีกที ถ้าอยากให้ตรงกว่านี้ ใช้ลิงก์ “ขอรีวิว” จาก Google Business Profile'};
+  return {kind:'other', url:u.href, msg:'ไม่ใช่ลิงก์ของ Google — ทำ QR ให้ได้ แต่ตรวจดูอีกทีว่าถูกร้านจริง'};
+}
+function withLang(url){
+  if(!el.thai.checked) return url;
+  return url+(url.indexOf('?')<0?'?':'&')+'hl=th';
+}
+
+/* ── วาด QR ── */
+function makeQR(text){
+  var qr=qrcode(0,'H');           /* H = กันเลอะ/รอยขีดข่วนได้สูงสุด เหมาะกับป้ายหน้าร้าน */
+  qr.addData(text); qr.make();
+  return qr;
+}
+function qrSvg(qr,px){
+  var n=qr.getModuleCount(), pad=4, size=n+pad*2, d='';
+  for(var r=0;r<n;r++) for(var c=0;c<n;c++)
+    if(qr.isDark(r,c)) d+='M'+(c+pad)+' '+(r+pad)+'h1v1h-1z';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+size+' '+size+'"'+
+    (px?' width="'+px+'" height="'+px+'"':'')+' shape-rendering="crispEdges">'+
+    '<rect width="'+size+'" height="'+size+'" fill="#ffffff"/>'+
+    '<path d="'+d+'" fill="#1B2B3B"/></svg>';
+}
+function qrCanvas(qr,target){
+  var n=qr.getModuleCount(), pad=4, size=n+pad*2;
+  var scale=Math.max(1,Math.floor(target/size)), px=size*scale;
+  var cv=document.createElement('canvas'); cv.width=cv.height=px;
+  var x=cv.getContext('2d');
+  x.fillStyle='#ffffff'; x.fillRect(0,0,px,px);
+  x.fillStyle='#1B2B3B';
+  for(var r=0;r<n;r++) for(var c=0;c<n;c++)
+    if(qr.isDark(r,c)) x.fillRect((c+pad)*scale,(r+pad)*scale,scale,scale);
+  return cv;
+}
+
+/* ── สถานะปัจจุบัน ── */
+var cur={url:'',qr:null};
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
+
+function render(){
+  var res=toReviewUrl(el.src.value);
+  var st=$('st'), fu=$('fu');
+  st.className='status'; fu.style.display='none'; cur.url=''; cur.qr=null;
+
+  if(res.kind==='empty'){ st.className='status warn'; st.textContent='⬆️ วางลิงก์รีวิวหรือ Place ID ของร้านก่อน แล้ว QR จะขึ้นทันที'; }
+  else if(res.kind==='bad'){ st.className='status err'; st.textContent='❌ อ่านลิงก์นี้ไม่ออก ลองก๊อปมาใหม่ทั้งเส้น'; }
+  else{
+    cur.url=withLang(res.url);
+    st.className='status '+(res.kind==='direct'?'ok':'warn');
+    st.textContent=(res.kind==='direct'?'✅ ':'⚠️ ')+res.msg;
+    fu.style.display='block'; fu.textContent=cur.url;
+  }
+
+  $('pT').textContent=el.title.value;
+  $('pS').textContent=el.sub.value;
+  $('pF').textContent=el.foot.value;
+
+  var sb=$('pSteps');
+  if(el.steps.checked){
+    sb.style.display='';
+    sb.innerHTML=[el.s1.value,el.s2.value,el.s3.value].map(function(t,i){
+      return t.trim()?'<div><span class="n">'+(i+1)+'</span><span>'+esc(t)+'</span></div>':'' }).join('');
+  } else sb.style.display='none';
+
+  var pb=$('pPromo');
+  if(el.promo.checked && el.promoT.value.trim()){
+    pb.style.display='';
+    pb.innerHTML=esc(el.promoT.value)+(el.promoF.value.trim()?'<span class="fine">'+esc(el.promoF.value)+'</span>':'');
+  } else pb.style.display='none';
+
+  var box=$('pQR');
+  if(cur.url){ cur.qr=makeQR(cur.url); box.innerHTML=qrSvg(cur.qr); }
+  else box.innerHTML='<div style="width:100%;height:100%;border:2px dashed #E0D9CC;border-radius:12px;'+
+                     'display:grid;place-items:center;color:#9AA6B6;font-size:.72rem;text-align:center;padding:12px">'+
+                     'ยังไม่มีลิงก์<br>QR จะขึ้นตรงนี้</div>';
+  save();
+}
+function save(){
+  try{ localStorage.setItem(KEY,JSON.stringify({src:el.src.value,thai:el.thai.checked,
+    title:el.title.value,sub:el.sub.value,steps:el.steps.checked,
+    s1:el.s1.value,s2:el.s2.value,s3:el.s3.value,foot:el.foot.value,
+    promo:el.promo.checked,promoT:el.promoT.value,promoF:el.promoF.value})); }catch(e){}
+}
+function load(){
+  var d=DEFAULTS;
+  try{ var s=localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); for(var k in DEFAULTS) if(!(k in o)) o[k]=DEFAULTS[k]; d=o } }catch(e){}
+  el.src.value=d.src; el.thai.checked=!!d.thai;
+  el.title.value=d.title; el.sub.value=d.sub; el.steps.checked=!!d.steps;
+  el.s1.value=d.s1; el.s2.value=d.s2; el.s3.value=d.s3; el.foot.value=d.foot;
+  el.promo.checked=!!d.promo; el.promoT.value=d.promoT; el.promoF.value=d.promoF;
+}
+
+/* ── ปุ่ม ── */
+function needUrl(){ if(!cur.url){ alert('ยังไม่มีลิงก์รีวิว — วางลิงก์ในช่องที่ 1 ก่อนนะครับ'); return false } return true }
+$('btnTest').onclick=function(){ if(needUrl()) window.open(cur.url,'_blank','noopener') };
+$('btnCopy').onclick=function(){
+  if(!needUrl()) return;
+  navigator.clipboard.writeText(cur.url).then(function(){ $('btnCopy').textContent='✅ คัดลอกแล้ว';
+    setTimeout(function(){ $('btnCopy').textContent='📋 คัดลอกลิงก์' },1500); },
+    function(){ alert('คัดลอกไม่สำเร็จ ลองก๊อปจากกล่องลิงก์ด้านบนแทน') });
+};
+$('safeWord').onclick=function(){ el.promoT.value=WORDS.safe.t; el.promoF.value=WORDS.safe.f; render() };
+$('directWord').onclick=function(){ el.promoT.value=WORDS.direct.t; el.promoF.value=WORDS.direct.f; render() };
+
+function download(blob,name){
+  var a=document.createElement('a'), u=URL.createObjectURL(blob);
+  a.href=u; a.download=name; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); setTimeout(function(){ URL.revokeObjectURL(u) },1000);
+}
+$('dlPng').onclick=function(){ if(!needUrl()) return;
+  qrCanvas(cur.qr,2048).toBlob(function(b){ download(b,'qr-review-olddays.png') },'image/png'); };
+$('dlSvg').onclick=function(){ if(!needUrl()) return;
+  download(new Blob([qrSvg(cur.qr,1024)],{type:'image/svg+xml'}),'qr-review-olddays.svg'); };
+
+/* พิมพ์: โคลนป้ายตัวอย่างลงกระดาษ แล้วสั่งพิมพ์ */
+function printSheet(mode,n){
+  if(!needUrl()) return;
+  var sheet=$('sheet'); sheet.className=mode; sheet.innerHTML='';
+  for(var i=0;i<n;i++) sheet.appendChild($('preview').cloneNode(true));
+  window.print();
+}
+$('prPoster').onclick=function(){ printSheet('poster',1) };
+$('prTent').onclick=function(){ printSheet('tent',2) };
+$('prSix').onclick=function(){ printSheet('six',6) };
+
+['input','change'].forEach(function(ev){
+  Object.keys(el).forEach(function(k){ el[k].addEventListener(ev,render) });
+});
+load(); render();
+</script>
+</body>
+</html>
