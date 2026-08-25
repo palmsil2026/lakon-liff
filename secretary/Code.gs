@@ -194,6 +194,11 @@ function doPost(e) {
     if (e && e.parameter && e.parameter.action === 'attImport') {
       return jsonOut(attImportRows(e.parameter.key, e.parameter.rows));
     }
+    // 💬 แชทคุณเลขาจากบอร์ด — ส่งแบบ POST เพราะคำถามยาวเกิน URL ได้ และคำตอบยาวใช้เวลาคิดนาน
+    if (e && e.parameter && e.parameter.action === 'chat') {
+      if (e.parameter.key !== cfg('QUEUE_KEY')) return jsonOut({ ok: false, error: 'unauthorized' });
+      return jsonOut(boardChat(String(e.parameter.q || '')));
+    }
     const body = JSON.parse(e.postData.contents);
     // LINE ส่งรูปกับข้อความมาเป็นคนละ event แต่มาใน webhook ก้อนเดียวกัน
     // เก็บข้อความในก้อนนี้ไว้ก่อน เพื่อให้ตอนวิเคราะห์รูปรู้ว่าคนส่ง "พิมพ์อะไรมาพร้อมรูป"
@@ -1799,7 +1804,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-23b';
+const CODE_VERSION = '2026-08-23c';
 
 function healthCheck() {
   const L = [];

@@ -353,6 +353,17 @@ async function api(params, retries = 1) {
   }
 }
 
+// ส่งแบบ POST — ใช้กับแชท: คำถาม/คำตอบยาวเกิน URL ได้ และคุณเลขาคิดนานกว่า 25 วิ (default 3 นาที)
+async function apiPost(params, timeoutMs) {
+  const ctl = new AbortController();
+  const tm = setTimeout(() => ctl.abort(), timeoutMs || 180000);
+  try {
+    const res = await fetch(GAS, { method: 'POST', redirect: 'follow', signal: ctl.signal,
+      body: new URLSearchParams(Object.assign({ key: KEY }, params)) });
+    return await res.json();
+  } finally { clearTimeout(tm); }
+}
+
 // ══════════ โหลดข้อมูล — โชว์ของแคชก่อนทันที แล้วค่อยอัปเดตของสด (stale-while-revalidate) ══════════
 function fromCache() {
   try {
@@ -681,8 +692,14 @@ applyTheme(localStorage.getItem('BD_THEME') || 'light');
 let CHAT = [];
 try { CHAT = JSON.parse(localStorage.getItem('BD_CHATLOG') || '[]'); } catch (e) {}
 function chatRender() {
-  $('chatLog').innerHTML = CHAT.map(m => `<div class="msg ${m.r === 'me' ? 'me' : 'ai'}">${esc(m.t)}</div>`).join('');
+  $('chatLog').innerHTML = CHAT.map((m, i) => `<div class="msg ${m.r === 'me' ? 'me' : 'ai'}">${esc(m.t)}` +
+    (m.retry ? `<div style="margin-top:8px"><button class="bt bt-main" data-requery="${i}" style="padding:6px 12px;font-size:.76rem">↻ ถามใหม่</button></div>` : '') +
+    '</div>').join('');
   $('chatLog').scrollTop = 1e9;
+  document.querySelectorAll('[data-requery]').forEach(b => b.onclick = () => {
+    const m = CHAT[Number(b.dataset.requery)];
+    if (m && m.retry) { CHAT.splice(Number(b.dataset.requery), 1); chatSend(m.retry); }
+  });
 }
 $('chatFab').onclick = () => {
   if (!CHAT.length) CHAT.push({ r: 'ai', t: 'สวัสดีค่ะคุณปาล์ม 🙋‍♀️ ดิฉันคุณเลขา คนเดียวกับในไลน์เลยค่ะ\nถามเรื่องงานบนบอร์ด สั่งงานใหม่ แปะไอเดีย ให้จำข้อมูล หรือส่งประกาศเข้ากลุ่ม — พิมพ์มาได้เลยนะคะ' });
@@ -692,25 +709,36 @@ $('chatFab').onclick = () => {
 };
 $('chatX').onclick = () => $('chatMask').classList.remove('on');
 $('chatMask').onclick = e => { if (e.target === $('chatMask')) $('chatMask').classList.remove('on'); };
-async function chatSend() {
-  const q = $('chatT').value.trim();
+async function chatSend(resend) {
+  const q = resend || $('chatT').value.trim();
   if (!q || $('chatSend').disabled) return;
-  $('chatT').value = '';
+  if (!resend) $('chatT').value = '';
   CHAT.push({ r: 'me', t: q }); chatRender();
   const ty = document.createElement('div'); ty.className = 'msg ai typing'; ty.textContent = 'กำลังพิมพ์...';
   $('chatLog').appendChild(ty); $('chatLog').scrollTop = 1e9;
   $('chatSend').disabled = true;
+  // คำถามที่ต้องคิดเยอะ (ร่างเอกสาร/วางแผน) ใช้เวลาเป็นนาที — นับวินาทีให้เห็นว่ายังทำงานอยู่ ไม่ใช่ค้าง
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    ty.textContent = s < 12 ? 'กำลังพิมพ์...' : 'กำลังคิดอยู่นะคะ... ' + s + ' วิ' + (s > 45 ? ' (คำตอบยาวใช้เวลาหน่อยค่ะ)' : '');
+  }, 1000);
   try {
-    const j = await api({ action: 'chat', q: q }, 0);
-    CHAT.push({ r: 'ai', t: j.ok ? j.reply : ('⚠️ ' + (j.error || 'ไม่สำเร็จ ลองใหม่นะคะ')) });
-  } catch (e) { CHAT.push({ r: 'ai', t: '⚠️ ' + e.message }); }
+    const j = await apiPost({ action: 'chat', q: q });
+    CHAT.push({ r: 'ai', t: j.ok ? j.reply : ('⚠️ ' + (j.error || 'ไม่สำเร็จ ลองใหม่นะคะ')), retry: j.ok ? '' : q });
+  } catch (e) {
+    const s = Math.round((Date.now() - t0) / 1000);
+    CHAT.push({ r: 'ai', t: s >= 175 ? '⚠️ คิดนานเกิน 3 นาทีค่ะ — ลองถามใหม่แบบซอยเป็นข้อ ๆ หรือสั่งทางไลน์แทนนะคะ'
+                                     : '⚠️ เชื่อมต่อไม่สำเร็จ (' + s + ' วิ) ลองใหม่อีกครั้งนะคะ', retry: q });
+  }
+  clearInterval(tick);
   CHAT = CHAT.slice(-40);
   localStorage.setItem('BD_CHATLOG', JSON.stringify(CHAT));
   $('chatSend').disabled = false;
   chatRender();
   load(true);   // เผื่อเลขาเพิ่งบันทึกงาน/ไอเดียให้ → บอร์ดอัปเดตตาม
 }
-$('chatSend').onclick = chatSend;
+$('chatSend').onclick = () => chatSend();   // ห้ามส่ง event เข้าไปเป็นพารามิเตอร์ resend
 $('chatT').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); } });
 
 // 🏭 เปิดแอปผู้บริหาร — CEO ใช้รหัสบอร์ดตัวเองเข้าได้เลย (ผู้บริหารคนอื่นใช้ EXEC_KEY แยก)
