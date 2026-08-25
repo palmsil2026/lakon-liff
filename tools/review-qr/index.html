@@ -67,6 +67,12 @@ textarea{min-height:74px;line-height:1.5;word-break:break-all}
 .cardqr .s{font-size:.78rem;color:#66788F;font-weight:500;margin-top:4px;line-height:1.45}
 .cardqr .qrbox{margin:13px auto 0;width:210px;height:210px}
 .cardqr .qrbox svg{display:block;width:100%;height:100%}
+.cardqr .starhint{margin:12px auto 0;background:rgba(200,145,46,.11);border:1.5px solid rgba(200,145,46,.34);
+  border-radius:13px;padding:9px 12px 8px;display:inline-block}
+.cardqr .starhint .row5{font-size:1.5rem;letter-spacing:.12em;color:#C8912E;line-height:1;white-space:nowrap}
+.cardqr .starhint .row5 .last{position:relative;display:inline-block;outline:2.5px dashed #D64B3F;
+  outline-offset:2px;border-radius:50%}
+.cardqr .starhint .tap{font-size:.72rem;font-weight:700;color:#98291f;margin-top:7px;line-height:1.3}
 .cardqr .steps3{margin-top:12px;text-align:left;display:inline-block}
 .cardqr .steps3 div{font-size:.76rem;font-weight:600;line-height:1.5;margin-top:5px;display:flex;gap:7px;align-items:flex-start}
 .cardqr .steps3 .n{flex:0 0 auto;width:1.35em;height:1.35em;border-radius:50%;background:#1B3558;color:#fff;
@@ -90,21 +96,29 @@ code{background:var(--raise);border-radius:6px;padding:1px 5px;font-size:.92em;w
   #sheet{display:block}
   .cardqr{box-shadow:none;border:1pt dashed #ccc;border-radius:6mm}
   /* ป้ายโปสเตอร์เต็มหน้า A4 */
-  #sheet.poster{display:grid;place-items:center;min-height:270mm}
-  #sheet.poster .cardqr{width:180mm;padding:14mm 12mm 10mm;border:none}
-  #sheet.poster .t{font-size:40pt}
-  #sheet.poster .s{font-size:16pt;margin-top:6pt}
-  #sheet.poster .qrbox{width:105mm;height:105mm;margin-top:8mm}
-  #sheet.poster .steps3 div{font-size:15pt;margin-top:7pt}
-  #sheet.poster .promo{font-size:24pt;padding:7mm;border-radius:5mm;margin-top:8mm}
-  #sheet.poster .promo .fine{font-size:11pt}
-  #sheet.poster .f{font-size:10pt}
+  #sheet.poster{display:grid;height:275mm}
+  #sheet.poster .cardqr{width:100%;height:100%;padding:8mm;border:none;
+    display:flex;flex-direction:column;justify-content:center}
+  #sheet.poster .t{font-size:34pt}
+  #sheet.poster .s{font-size:14pt;margin-top:5pt}
+  #sheet.poster .qrbox{width:88mm;height:88mm;margin-top:7mm}
+  #sheet.poster .starhint{margin-top:6mm;padding:4mm 6mm;align-self:center}
+  #sheet.poster .starhint .row5{font-size:28pt}
+  #sheet.poster .starhint .tap{font-size:12.5pt;margin-top:3mm}
+  #sheet.poster .steps3{align-self:center}
+  #sheet.poster .steps3 div{font-size:13pt;margin-top:6pt}
+  #sheet.poster .promo{font-size:20pt;padding:5mm;border-radius:5mm;margin-top:6mm}
+  #sheet.poster .promo .fine{font-size:10pt}
+  #sheet.poster .f{font-size:9.5pt;margin-top:4mm}
   /* ป้ายตั้งโต๊ะ A5 — 2 ใบต่อหน้า ตัดครึ่ง */
   #sheet.tent{display:grid;grid-template-rows:1fr 1fr;gap:5mm;height:275mm}
   #sheet.tent .cardqr{width:100%;height:100%;padding:7mm;display:flex;flex-direction:column;justify-content:center}
   #sheet.tent .t{font-size:21pt}
   #sheet.tent .s{font-size:10.5pt;margin-top:2pt}
   #sheet.tent .qrbox{width:58mm;height:58mm;margin-top:4mm}
+  #sheet.tent .starhint{margin-top:4mm;padding:3mm 5mm;align-self:center}
+  #sheet.tent .starhint .row5{font-size:22pt}
+  #sheet.tent .starhint .tap{font-size:9.5pt;margin-top:2.5mm}
   #sheet.tent .steps3{margin-top:4mm;align-self:center}
   #sheet.tent .steps3 div{font-size:9.5pt;margin-top:3pt}
   #sheet.tent .promo{font-size:14pt;padding:3.5mm;margin-top:4mm;border-radius:4mm}
@@ -116,7 +130,10 @@ code{background:var(--raise);border-radius:6px;padding:1px 5px;font-size:.92em;w
   #sheet.six .t{font-size:12.5pt}
   #sheet.six .s{font-size:7.5pt;margin-top:1pt}
   #sheet.six .qrbox{width:40mm;height:40mm;margin-top:3mm}
-  #sheet.six .steps3{margin-top:3mm;align-self:center}
+  #sheet.six .starhint{margin-top:2.5mm;padding:2mm 3.5mm;align-self:center}
+  #sheet.six .starhint .row5{font-size:15pt}
+  #sheet.six .starhint .tap{font-size:7pt;margin-top:1.5mm}
+  #sheet.six .steps3{margin-top:2.5mm;align-self:center}
   #sheet.six .steps3 div{font-size:6.8pt;margin-top:2pt}
   #sheet.six .promo{font-size:10pt;padding:2.5mm;margin-top:3mm;border-radius:3mm}
   #sheet.six .promo .fine{font-size:6pt;margin-top:1pt}
@@ -156,6 +173,9 @@ code{background:var(--raise);border-radius:6px;padding:1px 5px;font-size:.92em;w
       <input type="text" id="tTitle" maxlength="40">
       <label>บรรทัดรอง</label>
       <input type="text" id="tSub" maxlength="70">
+      <label class="chk"><input type="checkbox" id="tStar" checked> แสดงภาพสอนแตะดาว (ชี้ว่าแตะดวงไหน = 5 ดาว)</label>
+      <label>ข้อความใต้ดาว</label>
+      <input type="text" id="tTap" maxlength="46">
       <label class="chk"><input type="checkbox" id="tSteps" checked> แสดงขั้นตอน 1-2-3 (แตะ 5 ดาว → ใส่รูป → พิมพ์สั้น ๆ)</label>
       <label>ขั้นตอนที่ 1 / 2 / 3</label>
       <input type="text" id="tS1" maxlength="46" style="margin-bottom:6px">
@@ -206,6 +226,10 @@ code{background:var(--raise);border-radius:6px;padding:1px 5px;font-size:.92em;w
       <div class="t" id="pT"></div>
       <div class="s" id="pS"></div>
       <div class="qrbox" id="pQR"></div>
+      <div class="starhint" id="pStar">
+        <div class="row5">★★★★<span class="last">★</span></div>
+        <div class="tap" id="pTap"></div>
+      </div>
       <div class="steps3" id="pSteps"></div>
       <div class="promo" id="pPromo"></div>
       <div class="f" id="pF"></div>
@@ -235,8 +259,10 @@ var DEFAULTS = {
   src:'https://g.page/r/CYznApEWgtt4EBE/review', thai:false,   /* ลิงก์ขอรีวิว Old Days House */
   title:'รีวิวให้เราหน่อยน้า',
   sub:'Old Days House · ใช้เวลาไม่ถึงนาที',
+  star:true,
+  tap:'👆 แตะดวงขวาสุดทีเดียว = 5 ดาว',
   steps:true,
-  s1:'สแกน แล้วแตะดาวขวาสุด = ⭐ 5 ดวง',
+  s1:'สแกน → กล่องเขียนรีวิวเด้งขึ้นมาเลย',
   s2:'ใส่รูปที่เพิ่งถ่ายกับเครื่องดื่ม/เค้ก',
   s3:'พิมพ์สั้น ๆ สัก 1 บรรทัด แล้วโพสต์',
   foot:'ขอบคุณที่แวะมานะคะ · Old Days House',
@@ -250,7 +276,8 @@ var WORDS={
 };
 var KEY='olddays-review-qr';
 var $=function(id){return document.getElementById(id)};
-var el={src:$('src'),thai:$('thai'),title:$('tTitle'),sub:$('tSub'),steps:$('tSteps'),
+var el={src:$('src'),thai:$('thai'),title:$('tTitle'),sub:$('tSub'),
+        star:$('tStar'),tap:$('tTap'),steps:$('tSteps'),
         s1:$('tS1'),s2:$('tS2'),s3:$('tS3'),foot:$('tFoot'),
         promo:$('tPromo'),promoT:$('tPromoT'),promoF:$('tPromoF')};
 
@@ -337,6 +364,10 @@ function render(){
   $('pS').textContent=el.sub.value;
   $('pF').textContent=el.foot.value;
 
+  var sh=$('pStar');
+  if(el.star.checked){ sh.style.display=''; $('pTap').textContent=el.tap.value }
+  else sh.style.display='none';
+
   var sb=$('pSteps');
   if(el.steps.checked){
     sb.style.display='';
@@ -359,7 +390,7 @@ function render(){
 }
 function save(){
   try{ localStorage.setItem(KEY,JSON.stringify({src:el.src.value,thai:el.thai.checked,
-    title:el.title.value,sub:el.sub.value,steps:el.steps.checked,
+    title:el.title.value,sub:el.sub.value,star:el.star.checked,tap:el.tap.value,steps:el.steps.checked,
     s1:el.s1.value,s2:el.s2.value,s3:el.s3.value,foot:el.foot.value,
     promo:el.promo.checked,promoT:el.promoT.value,promoF:el.promoF.value})); }catch(e){}
 }
@@ -367,7 +398,8 @@ function load(){
   var d=DEFAULTS;
   try{ var s=localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); for(var k in DEFAULTS) if(!(k in o)) o[k]=DEFAULTS[k]; d=o } }catch(e){}
   el.src.value=d.src; el.thai.checked=!!d.thai;
-  el.title.value=d.title; el.sub.value=d.sub; el.steps.checked=!!d.steps;
+  el.title.value=d.title; el.sub.value=d.sub;
+  el.star.checked=!!d.star; el.tap.value=d.tap; el.steps.checked=!!d.steps;
   el.s1.value=d.s1; el.s2.value=d.s2; el.s3.value=d.s3; el.foot.value=d.foot;
   el.promo.checked=!!d.promo; el.promoT.value=d.promoT; el.promoF.value=d.promoF;
 }
