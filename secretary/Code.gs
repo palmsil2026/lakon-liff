@@ -700,6 +700,15 @@ function handleEvent(ev) {
     // ไม่ใช่เจ้าของและไม่ได้ถามในกลุ่มร้าน → ปล่อยไหลไปตามกติกาการเงินวงในด้านล่าง
   }
 
+  // 💸 ถามลูกหนี้ค้างสดๆ (เฉพาะเจ้าของ — เป็นการเงินวงใน คนอื่นถามจะไหลไปโดนปฏิเสธตามกฎ)
+  // ตอบจากชีตตรงๆ ไม่ผ่านสมอง AI = ไม่มีค่า token
+  if (owner && /(ลูกหนี้|เงินค้าง|ค้างเก็บ|ยอดค้าง|ตามเก็บเงิน|ใครค้าง)/.test(text)) {
+    const arTxt = plantReceivablesText();
+    lineReply(replyToken, arTxt || '💸 ยังอ่านข้อมูลลูกหนี้ไม่ได้ค่ะ — ตรวจว่าตั้ง DATA_SHEET_ID และมีชีต Payments แล้วหรือยังนะคะ');
+    logRow(['ลูกหนี้ค้าง', senderId, text, '']);
+    return;
+  }
+
   // ดูรายชื่อกลุ่มที่เลขาอยู่/รู้จัก (เฉพาะเจ้าของ)
   if (owner && /(รายชื่อกลุ่ม|กลุ่มไหนบ้าง|อยู่กลุ่มไหนบ้าง|รู้จักกลุ่มไหน)/i.test(text)) {
     const gs = listKnownGroups();
@@ -2240,13 +2249,14 @@ function boardWatch() {
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     const fn = t.getHandlerFunction();
-    if (['morningBrief', 'boardWatch', 'nudgeStaleTasks', 'fireDueReminders'].indexOf(fn) !== -1) ScriptApp.deleteTrigger(t);
+    if (['morningBrief', 'boardWatch', 'nudgeStaleTasks', 'fireDueReminders', 'receivablesBrief'].indexOf(fn) !== -1) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('morningBrief').timeBased().atHour(8).everyDays(1).create();
   ScriptApp.newTrigger('boardWatch').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('nudgeStaleTasks').timeBased().atHour(17).everyDays(1).create();
   ScriptApp.newTrigger('fireDueReminders').timeBased().everyMinutes(15).create();
-  Logger.log('✅ ตั้ง trigger แล้ว: morningBrief (8 โมง), boardWatch (ทุก 30 นาที), nudgeStaleTasks (17 โมง), fireDueReminders (ทุก 15 นาที)');
+  ScriptApp.newTrigger('receivablesBrief').timeBased().atHour(7).everyDays(1).create();
+  Logger.log('✅ ตั้ง trigger แล้ว: receivablesBrief (7 โมง), morningBrief (8 โมง), boardWatch (ทุก 30 นาที), nudgeStaleTasks (17 โมง), fireDueReminders (ทุก 15 นาที)');
 }
 
 function isFinanceTopic(text) {
@@ -2968,6 +2978,171 @@ function plantSalesSummaryText(which) {
       + '🏭 ผลิต ' + fm(made) + ' แพ็ค' + (waste ? ' · เสีย ' + fm(waste) : '') + '\n'
       + '📊 ดูละเอียดในห้องผู้บริหาร: ' + execBoardUrl().replace(/\?key=.*/, '');
   } catch (e) { console.error('plantSalesSummaryText: ' + e); return ''; }
+}
+
+// ════════════════════════════════════════════════════════════
+//  💸 ลูกหนี้ค้าง (AR) — "ยอดขาย − เงินที่บันทึกรับจริง"
+//  ⚠️ ยึดกฎ v14: ห้ามอ่านสถานะออเดอร์มาตัดสินว่าได้เงินแล้ว
+//     • ฝั่งเงิน → เชื่อชีต Payments เท่านั้น (plantPayments)
+//     • ฝั่งของ → ใช้สถานะส่งได้ (ยังไม่ส่ง = ยังไม่นับเป็นหนี้ค้างเก็บ)
+//  คำนวณด้วย GAS ล้วน ไม่เรียก AI เลย = ไม่มีค่า token
+// ════════════════════════════════════════════════════════════
+const AR_MIN_BAHT = 1;         // ต่ำกว่านี้ = เศษปัดเศษ ไม่ใช่หนี้จริง
+const AR_SHOW_PER_BUCKET = 5;  // โชว์กี่รายการต่อกลุ่มอายุหนี้ (กันข้อความยาวเกิน)
+
+// 💵 หัวข้อ "เงินสดเก็บแล้วยังไม่นำส่ง" — ปิดไว้ก่อนโดยตั้งใจ
+// เพราะยอดนี้คำนวณจาก "แถวเงินสดที่ Remit_ID ว่าง" ถ้าทีมยังไม่เริ่มใช้ระบบใบนำส่ง
+// เงินสดทุกแถวจะขึ้นว่า "ยังไม่นำส่ง" ทั้งที่จริงนำส่งไปแล้ว = เตือนผิดทุกวันจนเลิกอ่าน
+// เปิดเมื่อทีมเริ่มบันทึกใบนำส่งจริง: Script properties → AR_SHOW_HAND_CASH = on
+function arShowHandCash() {
+  return String(cfg('AR_SHOW_HAND_CASH') || '').trim().toLowerCase() === 'on';
+}
+
+// 'yyyy-MM-dd' → เลขวัน (ไว้ลบกันหาอายุหนี้)
+function arDayIndex(key) {
+  const p = String(key || '').split('-');
+  if (p.length !== 3) return null;
+  const n = Date.UTC(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  return isNaN(n) ? null : Math.floor(n / 86400000);
+}
+
+// รวมทุกช่องทางขาย → รายออเดอร์ → หักเงินที่รับจริง → คืนรายการที่ยังค้าง
+function plantReceivables() {
+  try {
+    const feed = plantFeed('');
+    if (!feed || !feed.sales.length) return null;
+    const paid = plantPayments() || {};
+
+    // 1 ออเดอร์มีหลายแถว (แยกตามรายการสินค้า) → ต้องยุบเป็นออเดอร์เดียวก่อน ไม่งั้นยอดเฟ้อ
+    const orders = {};
+    feed.sales.forEach(function (s) {
+      const oid = String(s.oid || '').trim();
+      if (!oid) return;
+      const o = orders[oid] = orders[oid] ||
+        { oid: oid, amount: 0, date: '', cust: '', seller: '', line: '', delivered: false };
+      o.amount += s.amount;
+      if (s.date && (!o.date || s.date < o.date)) o.date = s.date;  // ใช้วันแรกของออเดอร์
+      if (!o.cust && s.cust) o.cust = s.cust;
+      if (!o.seller && s.seller) o.seller = s.seller;
+      if (!o.line && s.line) o.line = s.line;
+      // ส่งของแล้วหรือยัง — ดูสถานะส่งเป็นหลัก (อันนี้ไม่ผิดกฎ v14 เพราะไม่ได้ใช้ตัดสินเรื่องเงิน)
+      if (/ส่งแล้ว|delivered|เก็บเงิน/i.test(String(s.dst || '') + ' ' + String(s.st || ''))) o.delivered = true;
+    });
+
+    const todayIdx = arDayIndex(Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd'));
+    const list = [];
+    let total = 0, waitShip = 0, waitShipAmt = 0;
+
+    Object.keys(orders).forEach(function (oid) {
+      const o = orders[oid];
+      const got = paid[oid] ? paid[oid].amt : 0;          // ← แหล่งความจริงเรื่องเงิน
+      const left = Math.round((o.amount - got) * 100) / 100;
+      if (left < AR_MIN_BAHT) return;                      // จ่ายครบแล้ว
+      if (!o.delivered) { waitShip++; waitShipAmt += left; return; } // ยังไม่ส่ง = ยังไม่ถือเป็นหนี้
+      const di = arDayIndex(o.date);
+      o.left = left;
+      o.age = (di !== null && todayIdx !== null) ? (todayIdx - di) : 0;
+      list.push(o);
+      total += left;
+    });
+    list.sort(function (a, b) { return b.age - a.age || b.left - a.left; });  // หนี้เก่าสุดขึ้นก่อน
+
+    // 💵 เงินสดที่เก็บมาแล้วแต่ยังไม่มีใบนำส่ง = เงินยังอยู่กับทีมหน้างาน (คนละเรื่องกับหนี้ค้าง)
+    let handCash = 0, handOrders = 0;
+    Object.keys(paid).forEach(function (oid) {
+      const h = (paid[oid] && paid[oid].hand) || 0;
+      if (h > 0) { handCash += h; handOrders++; }
+    });
+
+    return { list: list, total: total, waitShip: waitShip, waitShipAmt: waitShipAmt,
+             handCash: handCash, handOrders: handOrders };
+  } catch (e) { console.error('plantReceivables: ' + e); return null; }
+}
+
+// ข้อความรายงานลูกหนี้ (ใช้ได้ทั้งรายงานเช้าและตอนคุณปาล์มถามสด)
+function plantReceivablesText() {
+  try {
+    const ar = plantReceivables();
+    if (!ar) return '';
+    const fm = function (x) { return Number(x || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); };
+    const today = Utilities.formatDate(new Date(), 'GMT+7', 'd/M');
+    const handLine = (arShowHandCash() && ar.handCash > 0)
+      ? '\n\n💵 เงินสดเก็บแล้วยังไม่นำส่ง ' + fm(ar.handCash) + ' บาท (' + ar.handOrders + ' ออเดอร์)\nเงินยังอยู่กับทีมหน้างานนะคะ'
+      : '';
+
+    if (!ar.list.length) {
+      return '💸 ลูกหนี้ค้าง ' + today + '\nไม่มีออเดอร์ที่ส่งแล้วค้างเก็บเงินค่ะ เคลียร์หมด ✨' + handLine;
+    }
+
+    const buckets = [
+      { label: '🔴 เกิน 30 วัน',    items: [] },
+      { label: '🟠 15-29 วัน',      items: [] },
+      { label: '🟡 ไม่เกิน 14 วัน', items: [] }
+    ];
+    ar.list.forEach(function (o) {
+      if (o.age >= 30) buckets[0].items.push(o);
+      else if (o.age >= 15) buckets[1].items.push(o);
+      else buckets[2].items.push(o);
+    });
+
+    let msg = '💸 ลูกหนี้ค้าง ' + today + '\n'
+            + '━━━━━━━━━━━━━━\n'
+            + 'รวม ' + ar.list.length + ' ออเดอร์ · ' + fm(ar.total) + ' บาท\n';
+
+    buckets.forEach(function (b) {
+      if (!b.items.length) return;
+      let sum = 0;
+      b.items.forEach(function (o) { sum += o.left; });
+      msg += '\n' + b.label + ' — ' + b.items.length + ' ออเดอร์ ' + fm(sum) + ' บาท\n';
+      msg += b.items.slice(0, AR_SHOW_PER_BUCKET).map(function (o) {
+        const name = String(o.cust || '(ไม่ระบุชื่อ)').slice(0, 18);
+        return '  • ' + name + ' ' + fm(o.left) + ' (' + o.age + ' วัน)'
+             + (o.seller ? ' · ' + o.seller : '');
+      }).join('\n') + '\n';
+      if (b.items.length > AR_SHOW_PER_BUCKET) {
+        msg += '  … และอีก ' + (b.items.length - AR_SHOW_PER_BUCKET) + ' ออเดอร์\n';
+      }
+    });
+
+    // แยกตามเซลส์ — ไว้สั่งตามเก็บเป็นรายคน
+    const bySeller = {};
+    ar.list.forEach(function (o) {
+      const k = String(o.seller || '(ไม่ระบุ)');
+      if (!bySeller[k]) bySeller[k] = { n: 0, amt: 0 };
+      bySeller[k].n++; bySeller[k].amt += o.left;
+    });
+    const sellers = Object.keys(bySeller).sort(function (a, b) { return bySeller[b].amt - bySeller[a].amt; });
+    if (sellers.length) {
+      msg += '\n━━━━━━━━━━━━━━\n👤 แยกตามเซลส์\n'
+           + sellers.map(function (k) {
+               return '  • ' + k + ' ' + bySeller[k].n + ' ออเดอร์ ' + fm(bySeller[k].amt);
+             }).join('\n') + '\n';
+    }
+
+    if (ar.waitShip) {
+      msg += '\n(ยังไม่ส่งของอีก ' + ar.waitShip + ' ออเดอร์ ' + fm(ar.waitShipAmt) + ' บาท — ยังไม่นับเป็นหนี้ค้าง)';
+    }
+    return msg + handLine;
+  } catch (e) { console.error('plantReceivablesText: ' + e); return ''; }
+}
+
+// 🌅 รายงานลูกหนี้ทุกเช้า — ส่งเฉพาะตอนมีเรื่องให้ทำจริง (ไม่มีหนี้ = เงียบ ไม่รบกวน)
+function receivablesBrief() {
+  const owner = cfg('OWNER_LINE_USER_ID');
+  if (!owner) { console.warn('ยังไม่ได้ตั้ง OWNER_LINE_USER_ID'); return; }
+  const ar = plantReceivables();
+  if (!ar) return;                                   // ยังไม่ได้เชื่อมระบบขาย
+  // เคลียร์หมด → เงียบ ไม่ต้องส่งให้รก (ข้อความ "ไม่มีอะไร" ทุกวันจะทำให้เลิกอ่านรายงาน)
+  if (!ar.list.length && !(arShowHandCash() && ar.handCash)) return;
+  const txt = plantReceivablesText();
+  if (txt) linePush(owner, txt);
+}
+
+// ลองดูผลทันทีโดยไม่ต้องรอรอบเช้า (รันในหน้า editor แล้วดูที่ Execution log)
+function testReceivablesNow() {
+  const txt = plantReceivablesText();
+  Logger.log(txt || '(ไม่มีข้อมูล — ตรวจว่าตั้ง DATA_SHEET_ID และมีชีต Payments แล้วหรือยัง)');
+  return txt;
 }
 
 // รวมข้อมูลให้แอปผู้บริหารในครั้งเดียว (ประหยัดรอบเรียก GAS)
