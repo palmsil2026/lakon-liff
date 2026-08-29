@@ -10,6 +10,7 @@
 |---|---|---|
 | หน้าเว็บทั้งหมด (`index.html`, `board/`, `exec/`, `request.html`) | GitHub Pages ของ repo นี้ `palmsil2026.github.io/palm-hq/` | ✅ push `main` = ขึ้นจริงใน ~1 นาที (เฟส 1 แอปผู้บริหารขึ้นแล้ว) |
 | GAS คุณเลขา (`secretary/Code.gs`) — บอท LINE + บอร์ด + exec API + HR | Apps Script deployment `AKfycbwgxZ_yxK21-GcB0yuZSFw-uT7yr9J322ZyMT2H3QsHgcnEuvvhUP3I-yJH3hq9dC9J` | ✅ **วางแล้ว** (repo ล่าสุด = `2026-08-23d`) — ยิง API `?action=attSave` ตอบกลับเป็น JSON = ของจริงมี action ที่เพิ่มใน `23b` แล้ว จึงไม่ใช่ `23a` แน่นอน · เลขเป๊ะ ๆ ดูได้จากพิมพ์ "เช็คระบบ" ในไลน์ |
+| GAS การเงินโรงขวด (`bottle-finance/gas/Code.gs`) — ระบบใหม่ | ❌ **ยังไม่มีโปรเจกต์ GAS** | ⏳ รอคุณปาล์มติดตั้งครั้งแรกตาม `bottle-finance/README.md` (สร้างโปรเจกต์ → Script Properties → deploy → วาง URL ใน `bottle-finance/index.html` บรรทัด `GAS_URL`) — repo = `bottle-fin 2026-08-29a` |
 
 ### รอ deploy GAS เลขา
 | งาน | มาจากแชท |
