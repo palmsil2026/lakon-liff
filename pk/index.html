@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&K โรงขวด — แอปทีมงาน</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Sarabun:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F4F7F6; --surface:#FFFFFF; --ink:#1B2A26; --muted:#5E6F6A;
+  --green:#175A4C; --green-soft:#E1EFE9; --gold:#B8912F; --gold-soft:#F6EED9;
+  --ok:#2E7D4F; --warn:#B3541E; --warn-soft:#F7E8DE; --danger:#A63A3A;
+  --line:#D8E2DE;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#0E1815; --surface:#16241F; --ink:#E7F0EC; --muted:#93A8A0;
+    --green:#7FC7B2; --green-soft:#16352C; --gold:#D9B65C; --gold-soft:#332A14;
+    --ok:#6FBE92; --warn:#E0925F; --warn-soft:#3A2313; --danger:#E08585;
+    --line:#26382F;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--ground); color:var(--ink); font:15px/1.6 "Sarabun",system-ui,sans-serif; padding-bottom:80px;}
+header{background:var(--green); color:#fff; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;}
+@media (prefers-color-scheme: dark){ header{color:#0E1815;} }
+header h1{font-family:"Anuphan",sans-serif; font-size:18px; margin:0; font-weight:700;}
+header .u{font-size:12.5px; opacity:.85; cursor:pointer;}
+nav{display:flex; background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5;}
+nav button{flex:1; border:0; background:none; color:var(--muted); font:600 14px "Anuphan",sans-serif; padding:12px 4px; cursor:pointer; border-bottom:3px solid transparent;}
+nav button.on{color:var(--green); border-bottom-color:var(--gold);}
+main{max-width:720px; margin:0 auto; padding:16px;}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px;}
+h2{font-family:"Anuphan",sans-serif; font-size:16px; margin:0 0 10px;}
+label{display:block; font-size:12.5px; color:var(--muted); margin:10px 0 3px;}
+input,select,textarea{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--ground); color:var(--ink); font:inherit;}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--green); outline-offset:1px;}
+.row{display:flex; gap:8px;} .row>*{flex:1;}
+button.btn{background:var(--green); color:var(--ground); border:0; border-radius:8px; padding:10px 18px; font:600 14.5px "Anuphan",sans-serif; cursor:pointer; margin-top:12px;}
+button.btn.gold{background:var(--gold);}
+button.mini{background:var(--green-soft); color:var(--green); border:0; border-radius:6px; padding:5px 12px; font:600 12.5px "Anuphan",sans-serif; cursor:pointer;}
+button.mini.warn{background:var(--warn-soft); color:var(--warn);}
+.item-row{display:grid; grid-template-columns:1fr 64px 84px 30px 30px; gap:6px; margin-bottom:6px; align-items:center;}
+.item-row input[type=checkbox]{width:18px; height:18px;}
+.list{margin:0; padding:0; list-style:none;}
+.list li{padding:11px 0; border-bottom:1px dashed var(--line); display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;}
+.list li:last-child{border-bottom:none;}
+.chip{font:600 11.5px "Anuphan",sans-serif; padding:2px 10px; border-radius:99px; white-space:nowrap;}
+.c-wait{background:var(--gold-soft); color:var(--gold);} .c-doing{background:var(--green-soft); color:var(--green);}
+.c-ready{background:var(--green-soft); color:var(--ok);} .c-done{background:var(--line); color:var(--muted);}
+.c-owe{background:var(--warn-soft); color:var(--warn);}
+.meta{font-size:12px; color:var(--muted);}
+.total{font-family:"Anuphan",sans-serif; font-weight:700; font-size:18px; color:var(--green); text-align:right; margin-top:8px;}
+.msg{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--ground); padding:10px 22px; border-radius:99px; font-size:14px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:99;}
+.msg.show{opacity:1;}
+.tabpane{display:none;} .tabpane.on{display:block;}
+/* ใบพิมพ์ */
+#paper{display:none;}
+@media print{
+  body>*{display:none !important;} #paper{display:block !important;}
+  body{background:#fff; padding:0;}
+}
+#paper{font:14px/1.7 "Sarabun",sans-serif; color:#111; background:#fff; padding:24px;}
+#paper .doc-head{display:flex; justify-content:space-between; border-bottom:2px solid #175A4C; padding-bottom:10px; margin-bottom:14px;}
+#paper h3{font-family:"Anuphan",sans-serif; margin:0; font-size:20px;}
+#paper table{width:100%; border-collapse:collapse; margin:10px 0;}
+#paper th,#paper td{border:1px solid #999; padding:6px 10px; font-size:13.5px;}
+#paper th{background:#EEF4F1;}
+#paper .sign{display:flex; justify-content:space-around; margin-top:48px; text-align:center; font-size:13px;}
+#paper .sign div{border-top:1px dotted #555; padding-top:6px; width:180px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏭 P&K โรงขวด</h1>
+  <span class="u" id="uName" onclick="setUser()">ตั้งชื่อผู้ใช้</span>
+</header>
+<nav>
+  <button class="on" data-t="order">รับออเดอร์</button>
+  <button data-t="prod">งานผลิต</button>
+  <button data-t="screen">สกรีน</button>
+  <button data-t="office">ออฟฟิศ</button>
+</nav>
+<main>
+
+<section class="tabpane on" id="t-order">
+  <div class="card">
+    <h2>ลงออเดอร์ใหม่</h2>
+    <label>ลูกค้า</label>
+    <input id="oCust" list="dlCust" placeholder="พิมพ์ชื่อลูกค้า">
+    <datalist id="dlCust"></datalist>
+    <label>รายการสินค้า <span class="meta">(ราคาเติมให้จากราคากลางที่ประธานตั้ง — แก้เองได้)</span></label>
+    <div id="oItems"></div>
+    <button class="mini" onclick="addItemRow()">+ เพิ่มรายการ</button>
+    <div class="row">
+      <div><label>กำหนดส่ง</label><input type="date" id="oDue"></div>
+      <div><label>หมายเหตุ</label><input id="oNote"></div>
+    </div>
+    <div class="total" id="oTotal">รวม 0 บาท</div>
+    <button class="btn" onclick="saveOrder()">บันทึกออเดอร์</button>
+  </div>
+  <div class="card"><h2>ออเดอร์ล่าสุด</h2><ul class="list" id="orderList"></ul></div>
+</section>
+
+<section class="tabpane" id="t-prod">
+  <div class="card"><h2>คิวงานผลิต</h2><ul class="list" id="prodList"></ul></div>
+</section>
+
+<section class="tabpane" id="t-screen">
+  <div class="card"><h2>คิวงานสกรีน</h2><ul class="list" id="screenList"></ul></div>
+</section>
+
+<section class="tabpane" id="t-office">
+  <div class="card">
+    <h2>ออกบิล</h2>
+    <label>จากออเดอร์ (พร้อมส่ง/ส่งแล้ว ที่ยังไม่มีบิล)</label>
+    <select id="bOrder"><option value="">— บิลอิสระ (ไม่อิงออเดอร์) —</option></select>
+    <div id="bManual">
+      <label>ลูกค้า</label><input id="bCust" list="dlCust">
+      <label>รายการ</label><div id="bItems"></div>
+      <button class="mini" onclick="addItemRow('bItems')">+ เพิ่มรายการ</button>
+    </div>
+    <div class="row">
+      <div><label>ประเภท</label><select id="bType"><option>เงินสด</option><option>เครดิต</option></select></div>
+      <div><label>ช่องทางชำระ</label><select id="bChan"><option>เงินสด</option><option>โอน KBank</option><option>โอน KTB</option><option>โอน BBL</option><option>เช็ค</option><option></option></select></div>
+      <div id="bDueWrap" hidden><label>เครดิต (วัน)</label><input type="number" id="bDueDays" value="30"></div>
+    </div>
+    <button class="btn" onclick="createBill()">ออกบิล + พิมพ์</button>
+  </div>
+  <div class="card">
+    <h2>ใบวางบิล</h2>
+    <label>ลูกค้า (ดึงบิลเครดิตที่ค้างชำระ)</label>
+    <div class="row"><input id="sCust" list="dlCust"><button class="mini" onclick="loadOweBills()">ดึงบิลค้าง</button></div>
+    <div id="sBills" class="meta" style="margin-top:8px">— เลือกลูกค้าแล้วกดดึงบิลค้าง —</div>
+    <div class="row"><div><label>กำหนดเก็บเงิน</label><input type="date" id="sDue"></div></div>
+    <button class="btn gold" onclick="createStmt()">สร้างใบวางบิล + พิมพ์</button>
+  </div>
+  <div class="card"><h2>บิลล่าสุด</h2><ul class="list" id="billList"></ul></div>
+  <div class="card"><h2>ใบวางบิลรอเก็บเงิน</h2><ul class="list" id="stmtList"></ul></div>
+</section>
+
+</main>
+<div class="msg" id="msg"></div>
+<div id="paper"></div>
+
+<script>
+// ═══ ตั้งค่า: วาง URL Web App ของ GAS "P&K System" ตรงนี้ ═══
+const GAS_URL = 'PASTE_PK_GAS_WEBAPP_URL_HERE';
+
+let BOOT = { customers: [], products: [], settings: {} };
+let ORDERS = [], PRODJ = [], SCRJ = [], BILLS = [], STMTS = [];
+
+function key() {
+  let k = localStorage.getItem('pk_key');
+  if (!k) { k = prompt('ใส่รหัสทีม P&K'); if (k) localStorage.setItem('pk_key', k); }
+  return k || '';
+}
+function user() { return localStorage.getItem('pk_user') || ''; }
+function setUser() {
+  const n = prompt('ชื่อผู้ใช้งาน (โชว์ในประวัติงาน)', user());
+  if (n) { localStorage.setItem('pk_user', n); renderUser(); }
+}
+function renderUser() { document.getElementById('uName').textContent = user() || 'ตั้งชื่อผู้ใช้'; }
+function toast(t) { const m = document.getElementById('msg'); m.textContent = t; m.classList.add('show'); setTimeout(() => m.classList.remove('show'), 2500); }
+function baht(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
+
+async function api(action, params = {}, payload = null) {
+  if (GAS_URL.indexOf('PASTE_') === 0) { toast('ยังไม่ได้ตั้ง GAS_URL ในไฟล์'); throw new Error('no url'); }
+  const q = new URLSearchParams({ action, key: key(), user: user(), ...params });
+  if (payload) q.set('payload', JSON.stringify(payload));
+  const r = await fetch(GAS_URL + '?' + q.toString());
+  const j = await r.json();
+  if (!j.ok) { toast('❌ ' + (j.error || 'ผิดพลาด')); throw new Error(j.error); }
+  return j;
+}
+
+// ─── แถวรายการสินค้า ───
+function addItemRow(target = 'oItems', it = {}) {
+  const d = document.createElement('div');
+  d.className = 'item-row';
+  d.innerHTML = '<input class="i-name" list="dlProd" placeholder="สินค้า" value="' + (it.name || '') + '">' +
+    '<input class="i-qty" type="number" placeholder="จำนวน" value="' + (it.qty || '') + '">' +
+    '<input class="i-price" type="number" placeholder="ราคา" value="' + (it.price || '') + '">' +
+    '<input class="i-scr" type="checkbox" title="งานสกรีน"' + (it.screen ? ' checked' : '') + '>' +
+    '<button class="mini warn" onclick="this.parentNode.remove();calcTotal()">✕</button>';
+  d.querySelector('.i-name').addEventListener('change', function () {
+    const p = BOOT.products.find(x => x['ชื่อสินค้า'] === this.value);
+    const priceBox = d.querySelector('.i-price');
+    if (p && !priceBox.value) priceBox.value = p['ราคา/หน่วย'];
+    calcTotal();
+  });
+  d.querySelectorAll('input').forEach(i => i.addEventListener('input', calcTotal));
+  document.getElementById(target).appendChild(d);
+}
+function readItems(target) {
+  return [...document.getElementById(target).querySelectorAll('.item-row')].map(r => ({
+    name: r.querySelector('.i-name').value.trim(),
+    qty: Number(r.querySelector('.i-qty').value) || 0,
+    price: Number(r.querySelector('.i-price').value) || 0,
+    screen: r.querySelector('.i-scr').checked,
+  })).filter(it => it.name && it.qty);
+}
+function calcTotal() {
+  const t = readItems('oItems').reduce((s, it) => s + it.qty * it.price, 0);
+  document.getElementById('oTotal').textContent = 'รวม ' + baht(t) + ' บาท';
+}
+
+// ─── โหลดข้อมูล ───
+async function boot() {
+  renderUser();
+  addItemRow(); addItemRow('bItems');
+  try {
+    BOOT = await api('pkBoot');
+    document.getElementById('dlCust').innerHTML = BOOT.customers.map(c => '<option value="' + c['ชื่อลูกค้า'] + '">').join('');
+    let dl = document.getElementById('dlProd');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'dlProd'; document.body.appendChild(dl); }
+    dl.innerHTML = BOOT.products.map(p => '<option value="' + p['ชื่อสินค้า'] + '">').join('');
+    await refresh();
+  } catch (e) { /* toast แล้ว */ }
+}
+async function refresh() {
+  const j = await api('pkOrders');
+  ORDERS = j.orders; PRODJ = j.production; SCRJ = j.screens;
+  renderOrders(); renderJobs();
+  const b = await api('pkBills', { limit: 40 });
+  BILLS = b.bills; renderBills();
+  const s = await api('pkStmts');
+  STMTS = s.stmts; renderStmts();
+}
+
+const CHIP = s => ({ 'รอผลิต': 'c-wait', 'กำลังผลิต': 'c-doing', 'รอสกรีน': 'c-wait', 'กำลังสกรีน': 'c-doing', 'พร้อมส่ง': 'c-ready', 'ส่งแล้ว': 'c-done', 'ยกเลิก': 'c-done', 'เสร็จ': 'c-done', 'ค้างชำระ': 'c-owe', 'วางบิลแล้ว': 'c-wait', 'ชำระแล้ว': 'c-done', 'รอเก็บ': 'c-owe' }[s] || 'c-wait');
+
+function renderOrders() {
+  document.getElementById('orderList').innerHTML = ORDERS.map(o =>
+    '<li><div><b>' + o['ลูกค้า'] + '</b> <span class="meta">' + o['Order_ID'] + ' · ' + baht(o['ยอดรวม']) + ' บ.' + (o['กำหนดส่ง'] ? ' · ส่ง ' + o['กำหนดส่ง'] : '') + '</span></div>' +
+    '<div><span class="chip ' + CHIP(o['สถานะ']) + '">' + o['สถานะ'] + '</span> ' +
+    (o['สถานะ'] === 'พร้อมส่ง' ? '<button class="mini" onclick="ordStatus(\'' + o['Order_ID'] + '\',\'ส่งแล้ว\')">ส่งแล้ว</button> ' : '') +
+    (['ส่งแล้ว', 'ยกเลิก'].includes(o['สถานะ']) ? '' : '<button class="mini warn" onclick="if(confirm(\'ยกเลิกออเดอร์นี้?\'))ordStatus(\'' + o['Order_ID'] + '\',\'ยกเลิก\')">ยกเลิก</button>') +
+    '</div></li>').join('') || '<li class="meta">ยังไม่มีออเดอร์</li>';
+  // dropdown ออกบิล
+  const sel = document.getElementById('bOrder');
+  const opts = ORDERS.filter(o => ['พร้อมส่ง', 'ส่งแล้ว'].includes(o['สถานะ']) && !o['Bill_No']);
+  sel.innerHTML = '<option value="">— บิลอิสระ (ไม่อิงออเดอร์) —</option>' +
+    opts.map(o => '<option value="' + o['Order_ID'] + '">' + o['Order_ID'] + ' · ' + o['ลูกค้า'] + ' · ' + baht(o['ยอดรวม']) + ' บ.</option>').join('');
+}
+function renderJobs() {
+  const j = (list, type) => list.filter(x => x['สถานะ'] !== 'เสร็จ').map(x =>
+    '<li><div><b>' + (x['งาน'] || x['ลาย/สี'] || '') + '</b> <span class="meta">' + x['Order_ID'] + ' · ' + baht(x['จำนวนรวม'] || x['จำนวน']) + ' ใบ</span></div>' +
+    '<div><span class="chip ' + CHIP(x['สถานะ']) + '">' + x['สถานะ'] + '</span> ' +
+    (x['สถานะ'].indexOf('รอ') === 0 ? '<button class="mini" onclick="job(\'' + type + '\',\'' + x['Job_ID'] + '\',\'start\')">เริ่ม</button>' :
+      '<button class="mini" onclick="job(\'' + type + '\',\'' + x['Job_ID'] + '\',\'done\')">เสร็จ</button>') +
+    '</div></li>').join('') || '<li class="meta">ไม่มีงานค้าง 🎉</li>';
+  document.getElementById('prodList').innerHTML = j(PRODJ, 'prod');
+  document.getElementById('screenList').innerHTML = j(SCRJ, 'screen');
+}
+function renderBills() {
+  document.getElementById('billList').innerHTML = BILLS.slice(0, 15).map(b =>
+    '<li><div><b>' + b['Bill_No'] + '</b> <span class="meta">' + b['ลูกค้า'] + ' · ' + baht(b['ยอดรวม']) + ' บ. · ' + b['ประเภท'] + '</span></div>' +
+    '<div><span class="chip ' + CHIP(b['สถานะ']) + '">' + b['สถานะ'] + '</span> ' +
+    '<button class="mini" onclick="reprintBill(\'' + b['Bill_No'] + '\')">พิมพ์</button>' +
+    (b['สถานะ'] === 'ค้างชำระ' ? ' <button class="mini" onclick="payBill(\'' + b['Bill_No'] + '\')">รับชำระ</button>' : '') +
+    '</div></li>').join('') || '<li class="meta">ยังไม่มีบิล</li>';
+}
+function renderStmts() {
+  document.getElementById('stmtList').innerHTML = STMTS.filter(s => s['สถานะ'] === 'รอเก็บ').map(s =>
+    '<li><div><b>' + s['Stmt_No'] + '</b> <span class="meta">' + s['ลูกค้า'] + ' · ' + s['จำนวนบิล'] + ' บิล · ' + baht(s['ยอดรวม']) + ' บ. · เก็บ ' + (s['กำหนดเก็บเงิน'] || '-') + '</span></div>' +
+    '<div><button class="mini" onclick="if(confirm(\'เก็บเงินได้ครบแล้ว?\'))stmtDone(\'' + s['Stmt_No'] + '\')">เก็บแล้ว</button></div></li>').join('') || '<li class="meta">ไม่มีใบวางบิลรอเก็บ</li>';
+}
+
+// ─── การกระทำ ───
+async function saveOrder() {
+  const items = readItems('oItems');
+  const customer = document.getElementById('oCust').value.trim();
+  if (!customer || !items.length) return toast('ใส่ลูกค้ากับรายการก่อน');
+  const j = await api('pkOrderSave', {}, { customer, items, due: document.getElementById('oDue').value, note: document.getElementById('oNote').value });
+  toast('✅ บันทึก ' + j.id + ' · ' + baht(j.total) + ' บ.');
+  document.getElementById('oCust').value = ''; document.getElementById('oNote').value = '';
+  document.getElementById('oItems').innerHTML = ''; addItemRow(); calcTotal();
+  refresh();
+}
+async function ordStatus(id, status) { await api('pkOrderStatus', {}, { id, status }); toast('อัปเดตแล้ว'); refresh(); }
+async function job(type, id, doAct) { await api('pkJobDo', {}, { type, id, do: doAct }); toast(doAct === 'start' ? '▶️ เริ่มงาน' : '✅ ปิดงาน'); refresh(); }
+async function payBill(no) { const ch = prompt('ช่องทางชำระ (เงินสด/โอน KBank/...)', 'เงินสด'); if (ch === null) return; await api('pkBillPay', {}, { no, channel: ch }); toast('รับชำระแล้ว'); refresh(); }
+async function stmtDone(no) { await api('pkStmtDone', {}, { no }); toast('ปิดใบวางบิลแล้ว'); refresh(); }
+
+document.getElementById('bType').addEventListener('change', function () { document.getElementById('bDueWrap').hidden = this.value !== 'เครดิต'; });
+document.getElementById('bOrder').addEventListener('change', function () { document.getElementById('bManual').style.display = this.value ? 'none' : ''; });
+
+async function createBill() {
+  const orderId = document.getElementById('bOrder').value;
+  const pay = { type: document.getElementById('bType').value, channel: document.getElementById('bChan').value, dueDays: document.getElementById('bDueDays').value };
+  if (orderId) pay.orderId = orderId;
+  else {
+    pay.customer = document.getElementById('bCust').value.trim();
+    pay.items = readItems('bItems');
+    if (!pay.customer || !pay.items.length) return toast('ใส่ลูกค้ากับรายการก่อน');
+  }
+  const j = await api('pkBillCreate', {}, pay);
+  toast('🧾 ออกบิล ' + j.no);
+  printBillDoc(j.no, j.date, j.customer, j.items, j.total, pay.type, j.due, j.settings);
+  refresh();
+}
+
+let OWE = [];
+async function loadOweBills() {
+  const c = document.getElementById('sCust').value.trim();
+  if (!c) return toast('ใส่ชื่อลูกค้าก่อน');
+  const j = await api('pkBills', { customer: c, status: 'ค้างชำระ' });
+  OWE = j.bills;
+  document.getElementById('sBills').innerHTML = OWE.length ? OWE.map((b, i) =>
+    '<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:14px;color:var(--ink)"><input type="checkbox" checked data-i="' + i + '" style="width:16px"> ' +
+    b['Bill_No'] + ' · ' + (b['วันที่'] || '') + ' · <b>' + baht(b['ยอดรวม']) + ' บ.</b></label>').join('') : 'ลูกค้านี้ไม่มีบิลค้างชำระ';
+}
+async function createStmt() {
+  const c = document.getElementById('sCust').value.trim();
+  const nos = [...document.querySelectorAll('#sBills input:checked')].map(x => String(OWE[x.dataset.i]['Bill_No']));
+  if (!c || !nos.length) return toast('เลือกบิลก่อน');
+  const j = await api('pkStmtCreate', {}, { customer: c, billNos: nos, due: document.getElementById('sDue').value });
+  toast('📄 ใบวางบิล ' + j.no);
+  printStmtDoc(j.no, j.date, j.customer, j.bills, j.total, j.due, j.settings);
+  document.getElementById('sBills').textContent = '— เลือกลูกค้าแล้วกดดึงบิลค้าง —';
+  refresh();
+}
+function reprintBill(no) {
+  const b = BILLS.find(x => String(x['Bill_No']) === String(no));
+  if (!b) return;
+  let items = []; try { items = JSON.parse(b['รายการ'] || '[]'); } catch (e) {}
+  printBillDoc(b['Bill_No'], b['วันที่'], b['ลูกค้า'], items, b['ยอดรวม'], b['ประเภท'], b['กำหนดชำระ'], BOOT.settings);
+}
+
+// ─── เอกสารพิมพ์ ───
+function docHead(st, title) {
+  return '<div class="doc-head"><div><h3>' + (st.COMPANY_NAME || 'โรงขวด P&K') + '</h3>' +
+    '<div>' + (st.COMPANY_ADDR || '') + '</div><div>โทร ' + (st.COMPANY_TEL || '-') + (st.TAX_ID ? ' · เลขผู้เสียภาษี ' + st.TAX_ID : '') + '</div></div>' +
+    '<div style="text-align:right"><h3>' + title + '</h3></div></div>';
+}
+function printBillDoc(no, date, customer, items, total, type, due, st) {
+  const rows = (items && items.length) ? items.map((it, i) =>
+    '<tr><td>' + (i + 1) + '</td><td>' + it.name + (it.screen ? ' (สกรีน)' : '') + '</td><td style="text-align:right">' + baht(it.qty) + '</td><td style="text-align:right">' + baht(it.price) + '</td><td style="text-align:right">' + baht(it.qty * it.price) + '</td></tr>').join('')
+    : '<tr><td colspan="4">ยอดตามตกลง</td><td style="text-align:right">' + baht(total) + '</td></tr>';
+  document.getElementById('paper').innerHTML =
+    docHead(st || {}, type === 'เครดิต' ? 'ใบแจ้งหนี้ / ใบส่งของ' : 'บิลเงินสด') +
+    '<table style="border:none"><tr><td style="border:none;padding:2px 0"><b>เลขที่:</b> ' + no + ' &nbsp; <b>วันที่:</b> ' + date + '</td></tr>' +
+    '<tr><td style="border:none;padding:2px 0"><b>ลูกค้า:</b> ' + customer + (due ? ' &nbsp; <b>กำหนดชำระ:</b> ' + due : '') + '</td></tr></table>' +
+    '<table><tr><th style="width:36px">#</th><th>รายการ</th><th style="width:80px">จำนวน</th><th style="width:90px">ราคา/หน่วย</th><th style="width:100px">รวม</th></tr>' + rows +
+    '<tr><th colspan="4" style="text-align:right">รวมทั้งสิ้น</th><th style="text-align:right">' + baht(total) + ' บาท</th></tr></table>' +
+    '<div class="sign"><div>ผู้รับสินค้า</div><div>ผู้ส่งสินค้า / ผู้รับเงิน</div></div>';
+  window.print();
+}
+function printStmtDoc(no, date, customer, bills, total, due, st) {
+  document.getElementById('paper').innerHTML =
+    docHead(st || {}, 'ใบวางบิล') +
+    '<table style="border:none"><tr><td style="border:none;padding:2px 0"><b>เลขที่:</b> ' + no + ' &nbsp; <b>วันที่วางบิล:</b> ' + date + '</td></tr>' +
+    '<tr><td style="border:none;padding:2px 0"><b>ลูกค้า:</b> ' + customer + (due ? ' &nbsp; <b>กำหนดเก็บเงิน:</b> ' + due : '') + '</td></tr></table>' +
+    '<table><tr><th style="width:36px">#</th><th>เลขที่บิล</th><th>วันที่บิล</th><th style="width:110px">ยอด (บาท)</th></tr>' +
+    bills.map((b, i) => '<tr><td>' + (i + 1) + '</td><td>' + b['Bill_No'] + '</td><td>' + (b['วันที่'] || '') + '</td><td style="text-align:right">' + baht(b['ยอดรวม']) + '</td></tr>').join('') +
+    '<tr><th colspan="3" style="text-align:right">รวมทั้งสิ้น</th><th style="text-align:right">' + baht(total) + ' บาท</th></tr></table>' +
+    '<div class="sign"><div>ผู้วางบิล</div><div>ผู้รับวางบิล</div></div>';
+  window.print();
+}
+
+// ─── แท็บ ───
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.tabpane').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('t-' + b.dataset.t).classList.add('on');
+}));
+boot();
+</script>
+</body>
+</html>
