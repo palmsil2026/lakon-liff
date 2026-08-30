@@ -117,6 +117,26 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
 .brow.click:hover{background:var(--raise)}
 .chev{color:var(--faint);font-size:.7rem;font-weight:500;margin-left:5px}
 
+/* ── 🏅 ผลงานรายคน: แถวคน + สถิติในรีพอร์ตรายบุคคล ── */
+.prow{display:flex;align-items:center;gap:11px;padding:10px 9px;border-radius:12px;cursor:pointer;
+  border:1.5px solid var(--line);margin-bottom:8px;background:var(--bg);transition:background .15s}
+.prow:hover{background:var(--raise)}
+.prow .av{width:36px;height:36px;flex:0 0 36px;border-radius:11px;background:var(--raise);color:var(--sub);
+  display:grid;place-items:center;font-weight:800;font-size:.9rem}
+.prow .mid{flex:1;min-width:0}
+.prow .nm{font-weight:700;font-size:.84rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prow .sub{font-size:.7rem;color:var(--sub);margin-top:2px}
+.prow .rt{text-align:right;font-variant-numeric:tabular-nums}
+.prow .rt b{font-size:.9rem}
+.prow .rt span{display:block;font-size:.66rem;color:var(--faint)}
+.pstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:9px;margin:10px 0 4px}
+.pstat{background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:10px 11px}
+.pstat .lb{font-size:.66rem;color:var(--sub);font-weight:600}
+.pstat .v{font-size:1.12rem;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+.pstat .sub{font-size:.64rem;color:var(--faint);margin-top:2px}
+.psec{margin-top:16px}
+.psec h4{font-size:.82rem;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+
 /* ── ตาราง ── */
 .tb{width:100%;border-collapse:collapse;font-size:.8rem}
 .tb th{text-align:left;font-size:.68rem;color:var(--sub);font-weight:700;padding:7px 8px;border-bottom:1.5px solid var(--line);white-space:nowrap}
@@ -441,6 +461,7 @@ function aggr() {   // สรุปยอดฝั่งแอปจากออ
   return { amt, qty, byLine, bySeller, byDay };
 }
 const thMonth = mk => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }); };
+const thDate = dk => { const [y, m, d] = String(dk || '').split('-').map(Number); return y ? new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'; };
 // ── 💵 การเงิน: จัดออเดอร์เข้าก้อนเงินตามที่บันทึกจริง ──
 const EXP_CATS = ['พนักงาน', 'วัตถุดิบ/บรรจุภัณฑ์', 'อะไหล่/ซ่อมบำรุง', 'ของแถม/การตลาด', 'ขนส่ง/น้ำมัน', 'ค่าน้ำ-ไฟ-เน็ต', 'อื่นๆ'];
 const BUCKETS = {
@@ -623,7 +644,8 @@ function render() {
 
   // ── ยอดขายรายเซลส์ (โหมดสดเท่านั้น — ต้องมีออเดอร์รายแถว) ──
   if (live()) {
-    h += `<div class="sec"><h2>🧑‍💼 ยอดขายรายเซลส์</h2><div class="hint">เดือน ${esc(D.month)} — ใครขายเท่าไหร่ กี่เปอร์เซ็นต์ · แตะชื่อเพื่อดูออเดอร์</div>${sellersHtml(A.bySeller)}</div>`;
+    h += `<div class="sec"><h2>🧑‍💼 ยอดขายรายเซลส์</h2><div class="hint">เดือน ${esc(D.month)} — ใครขายเท่าไหร่ กี่เปอร์เซ็นต์ · แตะชื่อเพื่อดูรายงานผลงานคนนั้น</div>${sellersHtml(A.bySeller)}</div>`;
+    h += peopleHtml();
 
     // ── 💳 เงินค้างเก็บ + 🏆 ลูกค้า ──
     h += '<div class="grid2">';
@@ -684,10 +706,13 @@ function bindPhase1() {
   if ($('segDone')) $('segDone').onclick = () => { ONLY_DONE = true; localStorage.setItem('EX_DONE', '1'); render(); };
   document.querySelectorAll('[data-dday]').forEach(el => el.onclick = () => openDay(el.dataset.dday));
   document.querySelectorAll('[data-dline]').forEach(el => el.onclick = () => lineDrill(el.dataset.dline));
-  document.querySelectorAll('[data-dseller]').forEach(el => el.onclick = () => {
-    const s = el.dataset.dseller;
-    openOrders('🧑‍💼 ออเดอร์ของ ' + s + ' — ' + thMonth(MONTH), FO().filter(o => (o.seller || 'ไม่ระบุ') === s), true);
-  });
+  // แตะชื่อคน → รายงานผลงานรายบุคคล (ถ้าเซิร์ฟเวอร์ยังไม่ส่ง people มา ถอยไปเปิดตารางออเดอร์แบบเดิม)
+  const openPerson = s => {
+    if (person(s)) personDrill(s);
+    else openOrders('🧑‍💼 ออเดอร์ของ ' + s + ' — ' + thMonth(MONTH), FO().filter(o => (o.seller || 'ไม่ระบุ') === s), true);
+  };
+  document.querySelectorAll('[data-dseller]').forEach(el => el.onclick = () => openPerson(el.dataset.dseller));
+  document.querySelectorAll('[data-dperson]').forEach(el => el.onclick = () => openPerson(el.dataset.dperson));
   document.querySelectorAll('[data-oboard]').forEach(el => el.onclick = () => window.open(D.boardLink || '../board/', '_blank'));
   document.querySelectorAll('[data-dprodcard]').forEach(el => el.onclick = e => { e.stopPropagation(); prodDrill(); });
   document.querySelectorAll('[data-bucket]').forEach(el => el.onclick = () => {
@@ -743,12 +768,148 @@ function sellersHtml(bySeller) {
   return '<div class="bars">' + keys.map(k => {
     const v = bySeller[k];
     return `<div class="brow click" data-dseller="${esc(k)}">
-      <div class="top"><span class="nm"><span class="sw" style="background:var(--navy)"></span>${esc(k)}<span class="chev">▸ ดูออเดอร์</span></span>
+      <div class="top"><span class="nm"><span class="sw" style="background:var(--navy)"></span>${esc(k)}<span class="chev">▸ ดูรายงาน</span></span>
       <span class="val">${money(v.amount)} <span style="font-weight:500;color:var(--sub);font-size:.72rem">บาท</span></span></div>
       <div class="track"><div class="fill" style="width:${Math.max(2, Math.round(v.amount / max * 100))}%;background:var(--navy)"></div></div>
       <div class="pct">${Math.round(v.amount / total * 100)}% ของยอดเดือนนี้ · ${money(v.qty)} ลัง</div>
     </div>`;
   }).join('') + '</div>';
+}
+
+// ════════════════════════════════════════════════════════════
+//  🏅 ผลงานรายคน — เซลส์ / ขนส่ง-วิ่งเร่ / คนเข้าพบลูกค้า
+//  ตัวเลขคิดจากเซิร์ฟเวอร์ (D.people) = ทุกออเดอร์ของเดือนนั้น ไม่ขึ้นกับสวิตช์ "เฉพาะส่งแล้ว"
+// ════════════════════════════════════════════════════════════
+const PPL = () => (D && D.people && D.people.list) || [];
+const person = nm => PPL().find(p => p.name === nm);
+// หน้าที่หลักของคนนี้ — ใช้เลือกว่าจะโชว์ตัวเลขอะไรเป็นพระเอก (เซลส์ดูยอดขาย ขนส่งดูจำนวนของที่ลง)
+function pRole(p) {
+  if (/ขนส่ง|ส่งของ|คนส่ง|เร่/.test(p.role || '')) return 'del';
+  if (/เซลส์|ขาย|sales/i.test(p.role || '')) return 'sale';
+  if (p.del.tN && !p.t.n) return 'del';
+  if (p.t.n || p.vis.t) return 'sale';
+  return p.del.tN ? 'del' : 'sale';
+}
+const pctChg = (now, before) => !before ? (now ? '+100%' : '—') : (now >= before ? '+' : '') + Math.round((now - before) / before * 100) + '%';
+function peopleHtml() {
+  const ls = PPL();
+  if (!ls.length) return '';
+  return `<div class="sec"><h2>🏅 ผลงานรายคน (${ls.length} คน)</h2>
+    <div class="hint">เดือน ${esc(D.month)} — แตะชื่อเพื่อดูรายงานรายบุคคล: ขาย · เข้าพบลูกค้า · งานส่ง/วิ่งเร่ · เทียบเดือนก่อน · ยอดสะสม
+      <br>นับทุกออเดอร์ของเดือนนั้น (ไม่ขึ้นกับสวิตช์ “เฉพาะส่งแล้ว” ด้านบน)</div>` +
+    ls.map(p => {
+      const R = pRole(p);
+      const bits = [];
+      if (p.t.n) bits.push(`ขาย ${money(p.m.amt)} บาท`);
+      if (p.vis.m) bits.push(`เข้าพบ ${p.vis.m} ครั้ง`);
+      if (p.del.n) bits.push(`ส่ง ${p.del.n} บิล`);
+      if (p.van.up) bits.push(`ขึ้นรถเร่ ${money(p.van.up)} ลัง`);
+      const head = R === 'del'
+        ? { v: money(p.del.qty), u: 'ลังที่ลงเดือนนี้' }
+        : { v: money(p.m.amt), u: 'บาท เดือนนี้' };
+      return `<div class="prow" data-dperson="${esc(p.name)}">
+        <div class="av">${esc((p.name || '?').replace(/^(คุณ|พี่)/, '').slice(0, 1))}</div>
+        <div class="mid">
+          <div class="nm">${esc(p.name)}
+            ${p.role ? `<span class="pill p-gray">${esc(p.role)}</span>` : ''}
+            ${p.left ? '<span class="pill p-red">⚠️ พ้นสภาพ แต่ยังมีงานเข้า</span>' : ''}</div>
+          <div class="sub">${bits.join(' · ') || 'ยังไม่มีงานเดือนนี้'}</div>
+        </div>
+        <div class="rt"><b>${head.v}</b><span>${head.u}</span></div>
+      </div>`;
+    }).join('') + '</div>';
+}
+
+// ── รายงานรายบุคคล (โมดัล) — เนื้อหาปรับตามหน้าที่ ส่วนที่ไม่มีข้อมูลจะไม่ขึ้น ──
+function personDrill(nm) {
+  const p = person(nm);
+  if (!p) { toast('ยังไม่มีข้อมูลผลงานของ ' + nm); return; }
+  const R = pRole(p);
+  const prevLbl = D.people.prev ? thMonth(D.people.prev) : 'เดือนก่อน';
+  const st = (lb, v, sub, cls) => `<div class="pstat"><div class="lb">${lb}</div>
+    <div class="v"${cls ? ` style="color:${cls}"` : ''}>${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+
+  let h = `<div class="hint" style="margin-bottom:2px">${p.role ? esc(p.role) + ' · ' : ''}ผลงานเดือน ${esc(D.month)}
+    ${p.t.first ? ' · เริ่มมีงานในระบบ ' + esc(thDate(p.t.first)) : ''}</div>`;
+  if (p.left) h += `<div class="pill p-red" style="margin:6px 0">⚠️ ไม่อยู่ในทะเบียนพนักงานที่ยังทำงาน แต่ยังมีงานถูกคีย์ใต้ชื่อนี้ — ควรปิดล็อกอินหรือย้ายงานไปชื่อคนที่ทำจริง</div>`;
+  if (p.my) h += `<div class="pill p-gold" style="margin:6px 0">👤 รวมออเดอร์ลูกค้าส่วนตัวที่คนอื่นคีย์ให้ ${p.my} รายการ (ตามกติกา วรินธร/บุญวาทย์ = ยอดของคุณปาล์ม)</div>`;
+
+  // พระเอกของแต่ละหน้าที่
+  h += '<div class="pstats">';
+  if (R === 'sale') {
+    h += st('ยอดขายเดือนนี้', money(p.m.amt), p.m.qty ? money(p.m.qty) + ' ลัง · ' + p.m.n + ' บิล' : '');
+    h += st('เทียบ' + prevLbl, pctChg(p.m.amt, p.p.amt), money(p.p.amt) + ' บาท',
+            p.m.amt >= p.p.amt ? 'var(--green)' : 'var(--red)');
+    h += st('ลูกค้าที่ซื้อ', p.m.cust + ' ราย', p.m.nu ? 'ใหม่เดือนนี้ ' + p.m.nu + ' ราย' : 'ไม่มีลูกค้าใหม่');
+    h += st('ยอดสะสมทั้งหมด', money(p.t.amt), p.t.n + ' บิล · ' + p.t.cust + ' ราย');
+  } else {
+    h += st('ของที่ลงเดือนนี้', money(p.del.qty) + ' ลัง', p.del.n + ' บิล · มูลค่า ' + money(p.del.amt) + ' บาท');
+    h += st('วิ่งเร่ (ขายเอง-ส่งเอง)', money(p.del.ownQty) + ' ลัง', p.del.own + ' บิล');
+    h += st('ส่งตามออเดอร์ทีม', money(p.del.othQty) + ' ลัง', p.del.oth + ' บิล');
+    h += st('เงินสดเก็บได้', money(p.del.cash), 'เดือนนี้');
+  }
+  h += '</div>';
+
+  // ── ขาย: เดือนนี้ / เดือนก่อน / สะสม ──
+  if (p.t.n) {
+    h += `<div class="psec"><h4>💰 ยอดขายในฐานะเซลส์</h4>
+      <div class="scroll"><table class="tb">
+      <tr><th></th><th class="num">${esc(D.month)}</th><th class="num">${esc(prevLbl)}</th><th class="num">สะสมทั้งหมด</th></tr>
+      <tr><td>ยอดขาย (บาท)</td><td class="num"><b>${money(p.m.amt)}</b></td><td class="num">${money(p.p.amt)}</td><td class="num">${money(p.t.amt)}</td></tr>
+      <tr><td>จำนวน (ลัง)</td><td class="num"><b>${money(p.m.qty)}</b></td><td class="num">${money(p.p.qty)}</td><td class="num">${money(p.t.qty)}</td></tr>
+      <tr><td>จำนวนบิล</td><td class="num"><b>${p.m.n}</b></td><td class="num">${p.p.n}</td><td class="num">${p.t.n}</td></tr>
+      <tr><td>ลูกค้าที่ซื้อ (ราย)</td><td class="num"><b>${p.m.cust}</b></td><td class="num">${p.p.cust}</td><td class="num">${p.t.cust}</td></tr>
+      <tr><td>บิลเฉลี่ย (บาท)</td><td class="num">${money(p.m.n ? p.m.amt / p.m.n : 0)}</td><td class="num">${money(p.p.n ? p.p.amt / p.p.n : 0)}</td><td class="num">${money(p.t.n ? p.t.amt / p.t.n : 0)}</td></tr>
+      </table></div>
+      <div class="hint" style="margin-top:6px">งานล่าสุดในระบบ ${p.t.last ? esc(thDate(p.t.last)) : '—'}</div></div>`;
+  }
+
+  // ── เข้าพบลูกค้า → ปิดการขายได้กี่ราย ──
+  if (p.vis.t) {
+    const rate = p.vis.cust ? Math.round(p.vis.close / p.vis.cust * 100) : 0;
+    h += `<div class="psec"><h4>🚶 เข้าพบลูกค้าเดือนนี้</h4>
+      <div class="pstats" style="margin-top:6px">
+      ${st('เข้าพบ', p.vis.m + ' ครั้ง', p.vis.cust + ' ราย')}
+      ${st('ปิดได้ (มีออเดอร์)', p.vis.close + ' ราย', 'จากที่เข้าพบเดือนนี้')}
+      ${st('อัตราปิดการขาย', rate + '%', rate >= 30 ? 'ทำได้ดี' : 'เข้าพบเยอะแต่ปิดได้น้อย', rate >= 30 ? 'var(--green)' : 'var(--gold)')}
+      ${st('เทียบ' + prevLbl, pctChg(p.vis.m, p.vis.p), p.vis.p + ' ครั้ง')}
+      </div>
+      <div class="hint" style="margin-top:6px">เข้าพบสะสมทั้งหมด ${p.vis.t} ครั้ง${p.vis.chance ? ' · โอกาสสั่งซื้อที่ประเมินไว้เฉลี่ย ' + p.vis.chance + '%' : ''}</div></div>`;
+  }
+
+  // ── งานส่ง: แยกวิ่งเร่ (ค่าคอมคนละแบบ) ──
+  if (p.del.tN) {
+    h += `<div class="psec"><h4>🚚 งานส่ง / วิ่งเร่</h4>
+      <div class="scroll"><table class="tb">
+      <tr><th>ประเภทงาน</th><th class="num">บิล</th><th class="num">ลัง</th><th class="num">หมายเหตุค่าคอม</th></tr>
+      <tr><td>🏃 วิ่งเร่ — ขายเอง ส่งเอง</td><td class="num"><b>${p.del.own}</b></td><td class="num"><b>${money(p.del.ownQty)}</b></td><td class="num" style="font-size:.7rem;color:var(--sub)">คิดเรตวิ่งเร่</td></tr>
+      <tr><td>📦 ส่งตามออเดอร์ที่ทีมหามา</td><td class="num"><b>${p.del.oth}</b></td><td class="num"><b>${money(p.del.othQty)}</b></td><td class="num" style="font-size:.7rem;color:var(--sub)">คิดเรตขนส่ง</td></tr>
+      ${p.del.unk ? `<tr><td>❓ ระบุประเภทไม่ได้</td><td class="num"><b>${p.del.unk}</b></td><td class="num">—</td><td class="num" style="font-size:.7rem;color:var(--sub)">หาออเดอร์ต้นทางไม่เจอ</td></tr>` : ''}
+      <tr><td>รวมเดือนนี้</td><td class="num">${p.del.n}</td><td class="num">${money(p.del.qty)}</td><td class="num" style="font-size:.7rem;color:var(--sub)">มูลค่า ${money(p.del.amt)} บาท</td></tr>
+      </table></div>
+      <div class="hint" style="margin-top:6px">เงินสดเก็บหน้างานเดือนนี้ ${money(p.del.cash)} บาท · งานส่งสะสมทั้งหมด ${p.del.tN} บิล (${money(p.del.tQty)} ลัง)
+      ${p.del.own && p.del.oth ? '' : '<br>ถ้าตัวเลขแยกยังไม่ตรงกับหน้างาน แปลว่าคนคีย์ยังไม่ได้ระบุ “ผู้ส่ง” ในบิลนั้น'}</div></div>`;
+  }
+  if (p.van.up || p.van.ret) {
+    h += `<div class="psec"><h4>🚐 ของขึ้นรถเร่เดือนนี้</h4>
+      <div class="hint">เบิกขึ้นรถ <b>${money(p.van.up)}</b> ลัง${p.van.ret ? ' · รับคืนจากลูกค้า <b>' + money(p.van.ret) + '</b> ลัง' : ''} (ไม่นับรายการที่ถูกปฏิเสธ)</div></div>`;
+  }
+
+  const os = FO().filter(o => (o.seller || 'ไม่ระบุ') === p.name);
+  h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+    ${os.length ? `<button class="bt bt-main" id="pOrders">📄 ดูออเดอร์เดือนนี้ (${os.length})</button>` : ''}
+    ${D.staff && D.staff.some(s => s.name === p.name) ? `<button class="bt bt-gray" id="pStaff">👤 ข้อมูลพนักงาน/เงินเดือน</button>` : ''}
+  </div>`;
+
+  $('dtTitle').textContent = '🏅 ' + p.name + ' — ' + thMonth(MONTH);
+  $('dtBody').innerHTML = h;
+  $('dtMask').classList.add('on');
+  if ($('pOrders')) $('pOrders').onclick = () => openOrders('🧑‍💼 ออเดอร์ของ ' + p.name + ' — ' + thMonth(MONTH), os, true);
+  if ($('pStaff')) $('pStaff').onclick = () => {
+    const s = D.staff.find(x => x.name === p.name);
+    $('dtMask').classList.remove('on');
+    if (s) openStaff(s.id || s.name);
+  };
 }
 
 // ── 💵 หน้าการเงิน: เงินเข้าแยกก้อนตามที่บันทึกจริง + รายจ่ายแยกหมวด + สรุปสุทธิ ──
@@ -1201,7 +1362,7 @@ function openOrders(title, os, showDate, bucket) {
   let h = `<div class="hint" style="margin-bottom:8px">รวม <b>${money(tot)}</b> บาท · ${money(totQ)} ลัง · ${os.length} รายการ${ONLY_DONE ? ' (เฉพาะส่งแล้ว)' : ''}</div>`;
   h += os.length ? '<div class="scroll"><table class="tb"><tr>' + (showDate ? '<th>วันที่</th>' : '') + '<th>ลูกค้า</th><th>สินค้า</th><th class="num">ลัง</th><th class="num">' + (bucket ? 'ยอดในก้อนนี้' : 'ยอด') + '</th><th>สถานะ</th></tr>' +
     os.map(o => `<tr>${showDate ? '<td style="white-space:nowrap">' + esc(o.d.slice(8) + '/' + o.d.slice(5, 7)) + '</td>' : ''}
-      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + '</span>' : ''}</td>
+      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + (o.s0 ? ' (คีย์โดย ' + esc(o.s0) + ')' : '') + '</span>' : ''}</td>
       <td class="num">${money(o.qty)}</td><td class="num"><b>${money(val(o))}</b>${bucket && val(o) !== o.amt ? '<div style="font-size:.66rem;color:var(--faint)">ทั้งบิล ' + money(o.amt) + '</div>' : ''}</td>
       <td><span class="pill ${stPill(o.st)}">${esc(o.st || '—')}</span>${/unpaid|ค้าง/i.test(o.pay) ? ' <span class="pill p-red">ยังไม่จ่าย</span>' : ''}${o.ptype ? '<div style="font-size:.66rem;color:var(--faint);margin-top:2px">' + esc(o.ptype) + '</div>' : ''}</td></tr>`).join('') +
     '</table></div>' : '<div class="empty">ไม่มีออเดอร์</div>';
