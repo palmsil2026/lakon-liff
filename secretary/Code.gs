@@ -1835,7 +1835,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-23d';
+const CODE_VERSION = '2026-08-30a';
 
 function healthCheck() {
   const L = [];
@@ -2780,7 +2780,7 @@ function lineOfProduct(name, orderType) {
 function plantFeed(monthPrefix) {
   const ss = plantSS();
   if (!ss) return null;
-  const out = { sales: [], prod: [], staff: [], source: 'ระบบขาย-โรงงาน (สด)' };
+  const out = { sales: [], prod: [], staff: [], reg: [], source: 'ระบบขาย-โรงงาน (สด)' };
   try {
     // ── ชื่อสินค้า → ใช้จัดสายผลิตภัณฑ์ ──
     const prodName = {};
@@ -2823,6 +2823,8 @@ function plantFeed(monthPrefix) {
     // คอลัมน์ที่ระบบขายเพิ่มทีหลัง (สถานะส่ง / ยอดรับแล้ว) หาจากหัวตาราง ไม่ยึดตำแหน่ง
     const sDst = plantColIdx('Orders_Sales', /สถานะส่ง/);
     const sRecv = plantColIdx('Orders_Sales', /ยอดรับ|รับชำระ|รับแล้ว|ชำระแล้ว/);
+    const sDby = plantColIdx('Orders_Sales', /^ผู้ส่ง$/);
+    const sDby2 = plantColIdx('Orders_Sales', /^ส่งโดย$/);
     plantRows('Orders_Sales', 4000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[14] || ''))) return;
@@ -2833,6 +2835,7 @@ function plantFeed(monthPrefix) {
                        prod: pname, cust: String(r[6] || ''),
                        seller: String(r[4] || ''), st: String(r[14] || ''), pay: String(r[13] || ''), ptype: String(r[13] || ''),
                        dst: sDst >= 0 ? String(r[sDst] || '') : '',
+                       dby: String((sDby >= 0 && r[sDby]) || (sDby2 >= 0 && r[sDby2]) || '').trim(),
                        colRecv: sRecv >= 0 ? execNum(r[sRecv]) : null,
                        // ค้างเก็บ = ขายเครดิต/วางบิล + ส่งแล้ว แต่ยังไม่บันทึกเก็บเงิน
                        ar: /เครดิต|วางบิล/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[14] || '')) && !/เก็บเงิน/.test(String(r[14] || '')) });
@@ -2840,6 +2843,7 @@ function plantFeed(monthPrefix) {
     // Orders_OEM: C=วันที่(2) E=เซลส์(4) G=ชื่อลูกค้า(6) H=แบรนด์(7) I=ขนาด(8) J=จำนวน(9) L=ราคา/หน่วย(11) M=รวม(12) N=การชำระ(13) P=สถานะ(15) — สาย OEM เสมอ
     const oDst = plantColIdx('Orders_OEM', /สถานะส่ง/);
     const oRecv = plantColIdx('Orders_OEM', /ยอดรับ|รับชำระ|รับแล้ว|ชำระแล้ว/);
+    const oDby = plantColIdx('Orders_OEM', /^ผู้ส่ง$/);
     plantRows('Orders_OEM', 2000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[15] || ''))) return;
@@ -2848,6 +2852,7 @@ function plantFeed(monthPrefix) {
                        prod: ('OEM ' + String(r[7] || '') + ' ' + String(r[8] || '')).trim(), cust: String(r[6] || ''),
                        seller: String(r[4] || ''), st: String(r[15] || ''), pay: String(r[13] || ''), ptype: String(r[13] || ''),
                        dst: oDst >= 0 ? String(r[oDst] || '') : '',
+                       dby: String((oDby >= 0 && r[oDby]) || '').trim(),
                        colRecv: oRecv >= 0 ? execNum(r[oRecv]) : null,
                        ar: /เครดิต/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[15] || '')) });
     });
@@ -2920,11 +2925,199 @@ function plantFeed(monthPrefix) {
     if (SC && SC.name >= 0) plantRows('Staff').forEach(function (r) {
       const name = String(r[SC.name] || '').trim(); if (!name) return;
       const active = SC.active >= 0 ? String(r[SC.active]) : '';
-      if (active === 'false' || active === 'FALSE' || /ลาออก|ไม่ทำงาน/.test(active)) return;
+      const gone = active === 'false' || active === 'FALSE' || /ลาออก|ไม่ทำงาน/.test(active);
+      // ทะเบียนทุกคนรวมคนพ้นสภาพ — ไว้รวมตัวสะกดชื่อ + ธง "พ้นสภาพแต่ยังมีงานคีย์ใต้ชื่อ" ในรีพอร์ตรายคน
+      out.reg.push({ name: name, role: String((SC.role >= 0 && r[SC.role]) || ''), active: !gone });
+      if (gone) return;
       out.staff.push({ name: name, role: String((SC.role >= 0 && r[SC.role]) || ''), dept: 'โรงงาน', since: '', status: 'ทำงาน', contact: '' });
+    });
+
+    // ── ✏️ ชีตจริงสะกดชื่อคนไม่เท่ากัน (Palm/ปาล์ม · พี่กอล์ฟ/คุณกอล์ฟ · วุดดี้/วู้ดดี้) → รวมเป็นชื่อทะเบียน Staff
+    //    และกติกาเจ้าของ: ออเดอร์จากลูกค้าใน EXEC_MY_CUST = ยอดส่วนตัวของคุณปาล์มเสมอ ไม่ว่าใครเป็นคนคีย์
+    //    (ชื่อคนคีย์จริงเก็บไว้ใน seller0 ให้ตรวจย้อนได้ ไม่ทิ้งหลักฐาน)
+    const fixName = plantPersonFixer(out.reg);
+    out.sales.forEach(function (s) {
+      const fixed = fixName(s.seller);
+      if (s.cust && EXEC_MY_CUST.test(String(s.cust))) {
+        if (fixed !== 'คุณปาล์ม') s.seller0 = fixed || String(s.seller || '');
+        s.seller = 'คุณปาล์ม';
+      } else s.seller = fixed;
+      if (s.dby) s.dby = fixName(s.dby);
     });
   } catch (e) { console.error('plantFeed: ' + e); }
   return out;
+}
+
+// ════════ 🧑‍💼 ผลงานรายบุคคล (ขาย / เข้าพบลูกค้า / ส่งของ-วิ่งเร่) ════════
+// ออเดอร์จากลูกค้ารายชื่อนี้ = ยอดขายส่วนตัวของคุณปาล์ม ไม่ว่าใครเป็นคนคีย์ (คุณปาล์มสั่ง 2026-08-30)
+const EXEC_MY_CUST = /วรินธร|บุญวาทย์/;
+
+// คีย์ประจำตัวคน: ตัดคำนำหน้า + รวมตัวสะกดที่เจอจริงในชีต (Palm/ปาล์ม · วุดดี้/วู้ดดี้)
+function execPKey(n) {
+  n = String(n || '').trim().replace(/^(คุณ|พี่|น้อง|ลุง|ป้า)\s*/, '');
+  if (/^(palm|ปาล์ม)$/i.test(n)) return 'ปาล์ม';
+  if (/^(วุดดี้|วู้ดดี้|woody)$/i.test(n)) return 'วุดดี้';
+  return n;
+}
+// ตัวแปลงชื่อ → ชื่อตามทะเบียน Staff (reg จาก plantFeed) · คุณปาล์มใช้ชื่อเดียวกับหน้าจอผู้บริหารเสมอ
+function plantPersonFixer(reg) {
+  const map = {};
+  (reg || []).forEach(function (s) { const k = execPKey(s.name); if (k && !map[k]) map[k] = s.name; });
+  return function (n) {
+    const raw = String(n || '').trim(); if (!raw) return '';
+    const k = execPKey(raw);
+    if (k === 'ปาล์ม') return 'คุณปาล์ม';
+    return map[k] || raw;
+  };
+}
+
+// 🚶 กิจกรรมรายคนจากระบบขาย: เข้าพบลูกค้า (Visits) / บันทึกส่งของ (Deliveries) / ของขึ้นรถเร่ (VanLoads)
+// โครงคอลัมน์ยืนยันกับชีตจริง 2026-08-30 — วันที่ = คอลัมน์ C ทุกแท็บ (Timestamp คอลัมน์ B เป็นตัวสำรอง)
+function plantActivity(fixName) {
+  const out = { visits: [], deliv: [], van: [] };
+  try {
+    // Visits: E=เซลส์ G=ชื่อลูกค้า H=ผลการเข้าพบ L=โอกาสสั่งซื้อ(%)
+    plantRows('Visits', 4000).forEach(function (r) {
+      const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
+      out.visits.push({ date: dk, who: fixName(r[4]), cust: String(r[6] || '').trim(),
+                        res: String(r[7] || ''), chance: execNum(r[11]) });
+    });
+    // Deliveries: D=Order_ID F=ลูกค้า G=คนส่ง H=เก็บเงิน(บาท) — คนส่งเป็นชื่อคู่ได้ เช่น "พี่วู้ดดี้/พี่ต้น"
+    plantRows('Deliveries', 3000).forEach(function (r) {
+      const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
+      const who = String(r[6] || '').split('/').map(function (x) { return fixName(x); })
+                    .filter(String).join('/');
+      out.deliv.push({ date: dk, oid: String(r[3] || '').trim(), who: who,
+                       cust: String(r[5] || '').trim(), cash: execNum(r[7]) });
+    });
+    // VanLoads: E=เซลส์ F=ประเภท (ขึ้นของ/ส่งออเดอร์/รับคืนลูกค้า) I=จำนวน J=สถานะ
+    plantRows('VanLoads', 3000).forEach(function (r) {
+      const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
+      out.van.push({ date: dk, who: fixName(r[4]), typ: String(r[5] || ''), qty: execNum(r[8]), st: String(r[9] || '') });
+    });
+  } catch (e) { console.error('plantActivity: ' + e); }
+  return out;
+}
+
+// สรุปผลงานรายคน: ขาย (ในฐานะเซลส์) + เข้าพบลูกค้า + งานส่ง — เดือนที่ดู · เดือนก่อน · สะสมทั้งหมด
+// งานส่งแยก "ส่งตามออเดอร์ทีม" กับ "วิ่งเร่ขายเอง-ส่งเอง" เพราะค่าคอมคนละแบบ (โจทย์คุณปาล์ม 30/8)
+// ฟังก์ชันนี้คิดจากข้อมูลล้วน ๆ ไม่แตะชีต — มีเทสเทียบเลขใน scratchpad (people_test.js)
+function execPeople(feed, act, monthPrefix, prevPrefix) {
+  const P = {};
+  function at(name) {
+    return P[name] = P[name] || {
+      name: name,
+      sale: { m: { amt: 0, qty: 0, ord: {}, cust: {} }, p: { amt: 0, qty: 0, ord: {}, cust: {} },
+              t: { amt: 0, qty: 0, ord: {}, cust: {}, first: '', last: '' }, nu: {}, my: 0 },
+      vis: { m: 0, mc: {}, p: 0, t: 0, ch: 0, chN: 0 },
+      del: { n: 0, qty: 0, amt: 0, cash: 0, own: 0, ownQty: 0, oth: 0, othQty: 0, unk: 0, tN: 0, tQty: 0 },
+      van: { up: 0, ret: 0 },
+    };
+  }
+  const inM = function (d) { return String(d || '').indexOf(monthPrefix) === 0; };
+  const inP = function (d) { return !!prevPrefix && String(d || '').indexOf(prevPrefix) === 0; };
+
+  // วันแรกที่ลูกค้าแต่ละรายซื้อ (ไว้นับ "ลูกค้าใหม่") + ลูกค้าที่มีออเดอร์ในเดือนที่ดู (ไว้นับ "เข้าพบแล้วปิดได้")
+  const custFirst = {}, monthCust = {};
+  feed.sales.forEach(function (s) {
+    if (!s.cust) return;
+    if (!custFirst[s.cust] || s.date < custFirst[s.cust]) custFirst[s.cust] = s.date;
+    if (inM(s.date)) monthCust[s.cust] = 1;
+  });
+
+  // ── ยอดขายในฐานะเซลส์ ──
+  feed.sales.forEach(function (s) {
+    if (!s.seller) return;
+    const A = at(s.seller).sale;
+    const key = s.oid || (s.date + '|' + s.cust + '|' + s.prod);
+    const B = inM(s.date) ? A.m : (inP(s.date) ? A.p : null);
+    if (B) { B.amt += s.amount; B.qty += s.qty; B.ord[key] = 1; if (s.cust) B.cust[s.cust] = 1; }
+    A.t.amt += s.amount; A.t.qty += s.qty; A.t.ord[key] = 1; if (s.cust) A.t.cust[s.cust] = 1;
+    if (!A.t.first || s.date < A.t.first) A.t.first = s.date;
+    if (s.date > A.t.last) A.t.last = s.date;
+    if (inM(s.date) && s.cust && String(custFirst[s.cust] || '').indexOf(monthPrefix) === 0) A.nu[s.cust] = 1;
+    if (s.seller0) A.my++;
+  });
+
+  // ── งานส่ง: ยุบเป็นรายออเดอร์ก่อน (1 ออเดอร์มีหลายบรรทัดสินค้า และโผล่ได้ทั้งคอลัมน์ผู้ส่ง + แท็บ Deliveries) ──
+  const OI = {};
+  feed.sales.forEach(function (s) {
+    if (!s.oid) return;
+    const o = OI[s.oid] = OI[s.oid] || { qty: 0, amt: 0, seller: s.seller, dby: '', date: s.date };
+    o.qty += s.qty; o.amt += s.amount;
+    if (s.dby) o.dby = s.dby;
+  });
+  const seen = {};   // who|oid → 1 คน × 1 ออเดอร์ นับส่งครั้งเดียว
+  function delEvent(who, oid, date, cash, share) {
+    if (!who) return;
+    const D0 = at(who).del;
+    if (cash && inM(date)) D0.cash += cash * share;   // เงินเก็บหน้างานนับทุกใบ (แม้ออเดอร์ซ้ำ = ทยอยเก็บ)
+    const k = who + '|' + oid;
+    if (oid && seen[k]) return;
+    if (oid) seen[k] = 1;
+    const o = oid ? OI[oid] : null;
+    D0.tN++; if (o) D0.tQty += o.qty * share;
+    if (!inM(date)) return;
+    D0.n++;
+    // บิลส่งที่หาออเดอร์ต้นทางไม่เจอ (ออเดอร์ถูกยกเลิก/ยังไม่บันทึก/Order_ID ว่าง) — แยกไว้ ไม่เดาว่าเป็นวิ่งเร่หรือส่งตามออเดอร์
+    if (!o) { D0.unk++; return; }
+    D0.qty += o.qty * share; D0.amt += o.amt * share;
+    if (o.seller === who) { D0.own++; D0.ownQty += o.qty * share; }   // วิ่งเร่: ขายเอง-ส่งเอง
+    else { D0.oth++; D0.othQty += o.qty * share; }                    // ส่งตามออเดอร์ที่ทีมหามา
+  }
+  Object.keys(OI).forEach(function (oid) {
+    const o = OI[oid]; if (o.dby) delEvent(o.dby, oid, o.date, 0, 1);
+  });
+  act.deliv.forEach(function (d) {
+    const names = String(d.who || '').split('/').map(function (x) { return x.trim(); }).filter(String);
+    if (!names.length) return;
+    const share = 1 / names.length;   // ส่งด้วยกันหลายคน → แบ่งจำนวน/เงินคนละเท่า ๆ กัน
+    names.forEach(function (nm) { delEvent(nm, d.oid, d.date, d.cash, share); });
+  });
+
+  // ── เข้าพบลูกค้า (Visits) ──
+  act.visits.forEach(function (v) {
+    if (!v.who) return;
+    const V = at(v.who).vis;
+    V.t++;
+    if (inP(v.date)) V.p++;
+    if (!inM(v.date)) return;
+    V.m++; if (v.cust) V.mc[v.cust] = 1;
+    if (v.chance) { V.ch += v.chance; V.chN++; }
+  });
+
+  // ── ของขึ้นรถเร่ / รับคืน (VanLoads) — รายการถูกปฏิเสธ/ยกเลิกไม่นับ ──
+  act.van.forEach(function (x) {
+    if (!x.who || /ปฏิเสธ|ยกเลิก/.test(x.st) || !inM(x.date)) return;
+    const V = at(x.who).van;
+    if (/ขึ้นของ/.test(x.typ)) V.up += x.qty;
+    else if (/รับคืน/.test(x.typ)) V.ret += x.qty;
+  });
+
+  // ── ประกอบผลลัพธ์ + ธง "พ้นสภาพ" (ไม่อยู่ในทะเบียน/Active=false แต่ยังมีงานคีย์ใต้ชื่อ) ──
+  const reg = {};
+  (feed.reg || []).forEach(function (s) { reg[execPKey(s.name)] = s; });
+  const cnt = function (o) { return Object.keys(o).length; };
+  const R = function (x) { return Math.round(x); };
+  const list = Object.keys(P).map(function (k) {
+    const x = P[k], sl = x.sale, g = reg[execPKey(k)];
+    return {
+      name: k, role: g ? g.role : '', left: !g || !g.active, my: sl.my,
+      m: { amt: R(sl.m.amt), qty: R(sl.m.qty), n: cnt(sl.m.ord), cust: cnt(sl.m.cust), nu: cnt(sl.nu) },
+      p: { amt: R(sl.p.amt), qty: R(sl.p.qty), n: cnt(sl.p.ord), cust: cnt(sl.p.cust) },
+      t: { amt: R(sl.t.amt), qty: R(sl.t.qty), n: cnt(sl.t.ord), cust: cnt(sl.t.cust), first: sl.t.first, last: sl.t.last },
+      vis: { m: x.vis.m, cust: cnt(x.vis.mc),
+             close: Object.keys(x.vis.mc).filter(function (c) { return monthCust[c]; }).length,
+             chance: x.vis.chN ? R(x.vis.ch / x.vis.chN) : 0, p: x.vis.p, t: x.vis.t },
+      del: { n: x.del.n, qty: R(x.del.qty), amt: R(x.del.amt), cash: R(x.del.cash),
+             own: x.del.own, ownQty: R(x.del.ownQty), oth: x.del.oth, othQty: R(x.del.othQty),
+             unk: x.del.unk, tN: x.del.tN, tQty: R(x.del.tQty) },
+      van: { up: R(x.van.up), ret: R(x.van.ret) },
+    };
+  }).filter(function (x) {
+    return x.t.n || x.vis.t || x.del.tN || x.van.up || x.van.ret;
+  }).sort(function (a, b) { return (b.m.amt - a.m.amt) || (b.t.amt - a.t.amt); });
+  return { month: monthPrefix, prev: prevPrefix || '', list: list };
 }
 
 // 💧 สรุปยอดโรงน้ำรายวัน (ตอบใน LINE) — ใช้ plantFeed เดิม: ออเดอร์ทุกช่องทาง + ผลิต
@@ -3051,6 +3244,7 @@ function execDashboard(key, month) {
         .map(function (s) {
           const o = { d: s.date, line: s.line, prod: s.prod || '', cust: s.cust || '', seller: s.seller || '',
                       qty: s.qty, amt: s.amount, st: s.st || '', pay: s.pay || '', ptype: s.ptype || '', dst: s.dst || '' };
+          if (s.seller0) o.s0 = s.seller0;   // ออเดอร์ที่ถูกยกให้คุณปาล์มตามกติกาลูกค้าส่วนตัว — เก็บชื่อคนคีย์จริงไว้ดู
           if (s.recv != null) { o.recv = s.recv; o.rcash = s.rcash || 0; o.rhand = s.rhand || 0; o.rtrans = s.rtrans || 0; if (s.paidAt) o.paidAt = s.paidAt; }
           return o;
         });
@@ -3152,6 +3346,15 @@ function execDashboard(key, month) {
         .sort(function (a, b) { return b.amt - a.amt; }).slice(0, 10);
     }
 
+    // 🧑‍💼 ผลงานรายบุคคล — ขาย/เข้าพบ/ส่งของ เดือนนี้ · เดือนก่อน · สะสม (ใช้ทำรีพอร์ตรายคนในแอป)
+    let people = null;
+    if (liveSource && (feed.sales.length || feed.staff.length)) {
+      try {
+        const fixName = plantPersonFixer(feed.reg);
+        people = execPeople(feed, plantActivity(fixName), monthPrefix, prev ? prev.month : '');
+      } catch (e) { console.error('execPeople: ' + e); }
+    }
+
     // เจาะการผลิต: รายการบันทึกของเดือนที่ดู + วันบันทึกล่าสุด (ไว้เตือนถ้าหน้างานเงียบนาน)
     let prodLogs = [], lastProd = '';
     if (liveSource && feed.prod.length) {
@@ -3163,7 +3366,7 @@ function execDashboard(key, month) {
 
     return {
       viewer: vw.name,
-      prev: prev, ar: ar, lost: lost,
+      prev: prev, ar: ar, lost: lost, people: people,
       prodLogs: prodLogs, lastProd: lastProd,
       expenses: expenses, payroll: payroll,
       hasPay: !!(feed && feed.hasPay),   // true = อ่านเงินรับจริงจากสมุดรับเงิน v14 | false = ประเมินจากสถานะออเดอร์
