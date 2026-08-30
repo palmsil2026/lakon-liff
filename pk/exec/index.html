@@ -185,16 +185,31 @@ let DATA = null, EDIT_ID = null;
 async function api(action, payload=null, params={}){
   const q = new URLSearchParams({ action, key: KEY, ...params });
   if (payload) q.set('payload', JSON.stringify(payload));
-  const r = await fetch(GAS_URL + '?' + q.toString());
-  const j = await r.json();
-  if (!j.ok) throw new Error(j.error || 'ผิดพลาด');
+  let j;
+  try {
+    const r = await fetch(GAS_URL + '?' + q.toString());
+    j = await r.json();
+  } catch(e){
+    if (action !== 'pkExec') toast('❌ เน็ตมีปัญหา — ลองใหม่');
+    const err = new Error('เน็ตมีปัญหา'); err.net = true; throw err;
+  }
+  if (!j.ok){
+    if (action !== 'pkExec') toast('❌ ' + (j.error || 'ผิดพลาด'));
+    const err = new Error(j.error || 'ผิดพลาด');
+    err.badKey = !!j.needLogin || j.error === 'เฉพาะผู้บริหาร' || j.error === 'รหัสผู้บริหารไม่ถูกต้อง';
+    throw err;
+  }
   return j;
 }
+window.addEventListener('unhandledrejection', ev => { ev.preventDefault(); });
 async function load(){
   if (GAS_URL.indexOf('PASTE_') === 0) return fail('ยังไม่ได้ตั้ง GAS_URL ในไฟล์ pk/exec/index.html');
   if (!KEY) KEY = prompt('ใส่รหัสผู้บริหาร P&K') || '';
   try { DATA = await api('pkExec'); localStorage.setItem('pk_exec_key', KEY); }
-  catch(e){ localStorage.removeItem('pk_exec_key'); return fail('เข้าไม่ได้: ' + e.message + ' — รีเฟรชแล้วใส่รหัสใหม่'); }
+  catch(e){
+    if (e.badKey) localStorage.removeItem('pk_exec_key');
+    return fail(e.net ? 'เชื่อมต่อไม่ได้ — เช็คเน็ตแล้วรีเฟรช (รหัสยังจำไว้ให้)' : 'เข้าไม่ได้: ' + e.message + (e.badKey ? ' — รีเฟรชแล้วใส่รหัสใหม่' : ' — รีเฟรชอีกครั้ง (รหัสยังจำไว้ให้)'));
+  }
   render();
 }
 async function reload(){ DATA = await api('pkExec'); render(); }
@@ -245,7 +260,7 @@ function render(){
   $('cashTable').innerHTML = tbl(d.cashToday.map(c=>'<tr><td>'+esc(c.name)+'</td><td class="r">'+baht(c.amt)+'</td></tr>'), '<tr><th>ผู้รับเงิน</th><th class="r">เงินสดวันนี้ (บาท)</th></tr>', 'ยังไม่มีเงินสดวันนี้');
 
   const stRow = (name, bal, min) => {
-    const low = min !== '' && Number(String(bal).replace(/,/g,'')) <= Number(min);
+    const low = min !== '' && Number(String(bal).replace(/,/g,'')) <= Number(String(min).replace(/,/g,''));
     return '<tr><td>'+esc(name)+'</td><td class="r'+(low?' low':'')+'">'+baht(bal)+'</td><td class="r meta">'+esc(min===''?'—':min)+'</td></tr>';
   };
   $('stockProd').innerHTML = tbl(d.stock.products.map(p=>stRow(p['ชื่อสินค้า'], p['คงเหลือ'], p['จุดเตือน'])), '<tr><th>สินค้า</th><th class="r">คงเหลือ</th><th class="r">จุดเตือน</th></tr>', 'ยังไม่มีสินค้า');

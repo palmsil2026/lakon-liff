@@ -26,7 +26,7 @@
  *  - ⚠️ ห้ามเรียก rowsToObjs('Staff') ตรง ๆ — ใช้ staffPublic() เท่านั้น (กัน PIN หลุด)
  */
 
-const CODE_VERSION = '2026-08-30b';
+const CODE_VERSION = '2026-08-30c';
 const LEGACY_SNAPSHOT_ID = '13BkMrh9sckRf3lCVW_Kze61zpcLNhGB2ERy1AFSJVhU'; // PK_ระบบบัญชี_snapshot_2026-08-30
 const TZ = 'Asia/Bangkok';
 const TOKEN_DAYS = 7;          // อายุ token หลังล็อกอิน
@@ -86,6 +86,13 @@ function setupPkSystem() {
     const i = stfHead.indexOf(c);
     if (i >= 0) stf.getRange(1, i + 1, stf.getMaxRows(), 1).setNumberFormat('@');
   });
+  // เวลาเข้า/ออก เก็บเป็นข้อความ กันชีตแปลง 'HH:mm' เป็นวันที่ปี 1899
+  const att = ss.getSheetByName('Attendance');
+  const attHead = att.getRange(1, 1, 1, att.getLastColumn()).getValues()[0].map(String);
+  ['เข้า', 'ออก'].forEach(function (c) {
+    const i = attHead.indexOf(c);
+    if (i >= 0) att.getRange(1, i + 1, att.getMaxRows(), 1).setNumberFormat('@');
+  });
   const st = ss.getSheetByName('Settings');
   if (st.getLastRow() <= 1) SETTINGS_SEED.forEach(function (r) { st.appendRow(r); });
   const s1 = ss.getSheetByName('Sheet1') || ss.getSheetByName('ชีต1');
@@ -104,6 +111,7 @@ function tab(name) {
 // Sheets คืนวันที่เป็น Date object — แปลงเป็นข้อความรูปแบบเดียวเสมอก่อนใช้เทียบ
 function fmtCell(v) {
   if (v instanceof Date) {
+    if (v.getFullYear() < 1900) return Utilities.formatDate(v, TZ, 'HH:mm'); // Sheets เก็บ 'เวลาอย่างเดียว' เป็นฐานปี 1899
     const hasTime = v.getHours() || v.getMinutes();
     return Utilities.formatDate(v, TZ, hasTime ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
   }
@@ -130,6 +138,16 @@ function tailObjs(name, n) {
     .filter(function (r) { return r.join('') !== ''; })
     .map(function (r) { return r.map(fmtCell); });
   return toObjs(head, rows);
+}
+// อ่านหางแท็บจนครอบช่วงวันที่ที่ต้องใช้ — กันข้อมูล 30 วันเกินโควตาแถวแล้วโดนตัดเงียบ ๆ
+function tailSince_(name, dateLabel, since, n) {
+  let rows = tailObjs(name, n);
+  const total = tab(name).getLastRow() - 1;
+  while (rows.length >= n && n < total && rows[0] && String(rows[0][dateLabel]).slice(0, 10) >= since) {
+    n *= 2;
+    rows = tailObjs(name, n);
+  }
+  return rows;
 }
 function col(head, label) {
   const i = head.indexOf(label);
@@ -160,6 +178,8 @@ function now() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm')
 function today() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
 function daysFromNow(d) { return Utilities.formatDate(new Date(Date.now() + d * 86400000), TZ, 'yyyy-MM-dd'); }
 function num(x) { return Number(String(x).replace(/,/g, '')) || 0; }
+function padN(n, pad) { const s2 = String(n); return s2.length >= pad ? s2 : ('000000' + s2).slice(-pad); }
+function yy_() { return Utilities.formatDate(new Date(), TZ, 'yy'); }
 function settingsMap() {
   const st = readTab('Settings'); const m = {};
   const kc = col(st.head, 'key'), vc = col(st.head, 'value');
@@ -176,11 +196,11 @@ function seq(counterKey, prefix, pad) {
     if (String(v[i][kc]) === counterKey) {
       const n = Number(v[i][vc]) || 1;
       st.getRange(i + 1, vc + 1).setValue(n + 1);
-      return prefix + ('000000' + n).slice(-(pad || 4));
+      return prefix + padN(n, pad || 4);
     }
   }
   st.appendRow([counterKey, 2]);
-  return prefix + ('000000' + 1).slice(-(pad || 4));
+  return prefix + padN(1, pad || 4);
 }
 // ตัวนับแบบระบุ key ตรง ๆ (ใช้กับ BILL_NEXT / STMT_NEXT เดิมของ v1)
 function nextCounter(counterKey, pad, prefix) {
@@ -192,11 +212,11 @@ function nextCounter(counterKey, pad, prefix) {
     if (String(v[i][kc]) === counterKey) {
       const n = Number(v[i][vc]) || 1;
       st.getRange(i + 1, vc + 1).setValue(n + 1);
-      return prefix + ('000000' + n).slice(-pad);
+      return prefix + padN(n, pad);
     }
   }
   st.appendRow([counterKey, 2]);
-  return prefix + ('000000' + 1).slice(-pad);
+  return prefix + padN(1, pad);
 }
 
 // ─────────────────────────────────────────────
@@ -248,6 +268,7 @@ function staffSave(pay, me) { // exec เท่านั้น: {id?, name, nick
   const all = rowsToObjs('Staff');
   const dup = all.filter(function (s) { return String(s['ชื่อเล่น']).trim() === nick && s['Staff_ID'] !== pay.id; })[0];
   if (dup) return { ok: false, error: 'ชื่อเล่น "' + nick + '" ถูกใช้แล้ว (' + dup['ชื่อ'] + ')' };
+  if (pay.pin && !/^\d{4,6}$/.test(String(pay.pin))) return { ok: false, error: 'PIN ต้องเป็นตัวเลข 4-6 หลัก' };
   if (pay.id) {
     const patch = { 'ชื่อ': pay.name, 'ชื่อเล่น': nick, 'แผนก': pay.dept || '', 'สถานะ': pay.status || 'ทำงาน', 'หมายเหตุ': pay.note || '' };
     if (pay.pin) patch['PIN'] = String(pay.pin);
@@ -264,11 +285,15 @@ function staffSave(pay, me) { // exec เท่านั้น: {id?, name, nick
 // ─── ลงเวลา ───
 function clock(pay, me) {
   if (me.via !== 'pin') return { ok: false, error: 'ลงเวลาต้องล็อกอินด้วย PIN ของตัวเอง' };
-  const td = today();
+  // ใช้เวลาที่ "กดจริง" จากเครื่อง (คิวออฟไลน์ replay ทีหลังได้เวลาถูก) — เพี้ยนเกิน 3 วันใช้เวลา server
+  let base = new Date();
+  const at = Number(pay.at);
+  if (at && !isNaN(at) && Math.abs(Date.now() - at) < 3 * 86400000) base = new Date(at);
+  const td = Utilities.formatDate(base, TZ, 'yyyy-MM-dd');
   const att = rowsToObjs('Attendance');
   const mine = att.filter(function (a) { return a['Staff_ID'] === me.id; });
   const todayRow = mine.filter(function (a) { return String(a['วันที่']) === td; })[0];
-  const t = Utilities.formatDate(new Date(), TZ, 'HH:mm');
+  const t = Utilities.formatDate(base, TZ, 'HH:mm');
   if (pay.do === 'in') {
     if (todayRow && todayRow['เข้า']) return { ok: true, already: true, in: todayRow['เข้า'], out: todayRow['ออก'] };
     if (todayRow) { updateAtt_(td, me.id, { 'เข้า': t }); }
@@ -279,11 +304,12 @@ function clock(pay, me) {
   let target = todayRow && todayRow['เข้า'] ? todayRow : null;
   let targetDate = td;
   if (!target) {
-    const yd = daysFromNow(-1);
+    const yd = Utilities.formatDate(new Date(base.getTime() - 86400000), TZ, 'yyyy-MM-dd');
     const yRow = mine.filter(function (a) { return String(a['วันที่']) === yd && a['เข้า'] && !a['ออก']; })[0];
     if (yRow) { target = yRow; targetDate = yd; }
   }
   if (!target) {
+    if (todayRow) { updateAtt_(td, me.id, { 'ออก': t }); return { ok: true, out: t, warn: 'ไม่พบเวลาเข้า — อัปเดตเวลาออกให้แล้ว', _log: { ref: me.id, detail: 'ออก ' + t + ' (ไม่มีเวลาเข้า)' } }; }
     appendObj('Attendance', { 'วันที่': td, 'Staff_ID': me.id, 'ชื่อ': me.name, 'ออก': t, 'หมายเหตุ': 'ไม่มีเวลาเข้า' });
     return { ok: true, out: t, warn: 'ไม่พบเวลาเข้า — บันทึกออกไว้ให้ผู้บริหารตรวจ', _log: { ref: me.id, detail: 'ออก ' + t + ' (ไม่มีเวลาเข้า)' } };
   }
@@ -393,7 +419,7 @@ function orderSave(pay, me) {
   if (!customer || !items.length) return { ok: false, error: 'ต้องมีลูกค้าและรายการ' };
   const total = items.reduce(function (s, it) { return s + it.qty * it.price; }, 0);
   const hasScreen = items.some(function (it) { return it.screen; });
-  const id = seq('ORD_NEXT', 'PO26-', 4);
+  const id = seq('ORD_NEXT', 'PO' + yy_() + '-', 4);
   const cust = custSave({ name: customer }, me);
   appendObj('Orders', {
     'Order_ID': id, 'วันที่รับ': today(), 'ลูกค้า': customer, 'Customer_ID': cust.id || '',
@@ -402,13 +428,13 @@ function orderSave(pay, me) {
   });
   items.forEach(function (it) {
     appendObj('Production', {
-      'Job_ID': seq('JOB_NEXT', 'PJ26-', 4), 'Order_ID': id, 'วันที่เข้าคิว': today(),
+      'Job_ID': seq('JOB_NEXT', 'PJ' + yy_() + '-', 4), 'Order_ID': id, 'วันที่เข้าคิว': today(),
       'งาน': it.name + ' ×' + it.qty, 'จำนวนรวม': it.qty,
       'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอผลิต',
     });
     if (it.screen) {
       appendObj('ScreenJobs', {
-        'Job_ID': seq('SJOB_NEXT', 'SJ26-', 4), 'Order_ID': id, 'วันที่เข้าคิว': today(),
+        'Job_ID': seq('SJOB_NEXT', 'SJ' + yy_() + '-', 4), 'Order_ID': id, 'วันที่เข้าคิว': today(),
         'ลาย/สี': it.name + (it.screenNote ? ' (' + it.screenNote + ')' : ''), 'จำนวน': it.qty,
         'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอสกรีน',
       });
@@ -422,17 +448,20 @@ function jobsOf_(orderId) {
     scr: rowsToObjs('ScreenJobs').filter(function (j) { return j['Order_ID'] === orderId; }),
   };
 }
-function deliveredOf_(orderId) {
-  const map = {};
-  rowsToObjs('Deliveries').filter(function (d) { return d['Order_ID'] === orderId; }).forEach(function (d) {
+function deliveredMapAll_() { // อ่าน Deliveries รอบเดียว → { orderId: { pid|ชื่อ: ยอดส่งสะสม } }
+  const by = {};
+  rowsToObjs('Deliveries').forEach(function (d) {
     let its = []; try { its = JSON.parse(d['รายการ'] || '[]'); } catch (e) {}
-    its.forEach(function (it) { const k = it.pid || it.name; map[k] = (map[k] || 0) + (Number(it.qty) || 0); });
+    const m = by[d['Order_ID']] = by[d['Order_ID']] || {};
+    its.forEach(function (it) { const k = it.pid || it.name; m[k] = (m[k] || 0) + (Number(it.qty) || 0); });
   });
-  return map;
+  return by;
 }
+function deliveredOf_(orderId) { return deliveredMapAll_()[orderId] || {}; }
 function orderEdit(pay, me) { // แก้ได้เฉพาะออเดอร์ที่ยังไม่เริ่มอะไรเลย
   const ord = rowsToObjs('Orders').filter(function (o) { return o['Order_ID'] === pay.id; })[0];
   if (!ord) return { ok: false, error: 'ไม่พบออเดอร์' };
+  if (ord['สถานะ'] === 'ยกเลิก') return { ok: false, error: 'ออเดอร์ถูกยกเลิกแล้ว — เปิดออเดอร์ใหม่แทน' };
   const j = jobsOf_(pay.id);
   const started = j.prod.concat(j.scr).some(function (x) { return x['สถานะ'] !== 'รอผลิต' && x['สถานะ'] !== 'รอสกรีน' && x['สถานะ'] !== 'ยกเลิก'; });
   if (started || ord['Bill_No'] || Object.keys(deliveredOf_(pay.id)).length) return { ok: false, error: 'งานเริ่มแล้ว/มีบิลหรือการส่งแล้ว — แก้ไม่ได้ ให้ยกเลิกแล้วเปิดใหม่ หรือติดต่อผู้บริหาร' };
@@ -442,14 +471,16 @@ function orderEdit(pay, me) { // แก้ได้เฉพาะออเด�
   const rs = resolveItems_(pay.items);
   if (!rs.items.length) return { ok: false, error: 'ต้องมีรายการอย่างน้อย 1 รายการ' };
   const total = rs.items.reduce(function (s, it) { return s + it.qty * it.price; }, 0);
+  const customer2 = String(pay.customer || ord['ลูกค้า']).trim();
+  const cust2 = custSave({ name: customer2 }, me);
   updateWhere('Orders', 'Order_ID', pay.id, {
-    'ลูกค้า': pay.customer || ord['ลูกค้า'], 'กำหนดส่ง': pay.due || '', 'ยอดรวม': total,
+    'ลูกค้า': customer2, 'Customer_ID': cust2.id || '', 'กำหนดส่ง': pay.due || '', 'ยอดรวม': total,
     'มีสกรีน': rs.items.some(function (it) { return it.screen; }) ? 'มี' : '', 'รายการ': JSON.stringify(rs.items),
     'หมายเหตุ': pay.note || '', 'อัปเดตล่าสุด': now(),
   });
   rs.items.forEach(function (it) {
-    appendObj('Production', { 'Job_ID': seq('JOB_NEXT', 'PJ26-', 4), 'Order_ID': pay.id, 'วันที่เข้าคิว': today(), 'งาน': it.name + ' ×' + it.qty, 'จำนวนรวม': it.qty, 'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอผลิต' });
-    if (it.screen) appendObj('ScreenJobs', { 'Job_ID': seq('SJOB_NEXT', 'SJ26-', 4), 'Order_ID': pay.id, 'วันที่เข้าคิว': today(), 'ลาย/สี': it.name + (it.screenNote ? ' (' + it.screenNote + ')' : ''), 'จำนวน': it.qty, 'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอสกรีน' });
+    appendObj('Production', { 'Job_ID': seq('JOB_NEXT', 'PJ' + yy_() + '-', 4), 'Order_ID': pay.id, 'วันที่เข้าคิว': today(), 'งาน': it.name + ' ×' + it.qty, 'จำนวนรวม': it.qty, 'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอผลิต' });
+    if (it.screen) appendObj('ScreenJobs', { 'Job_ID': seq('SJOB_NEXT', 'SJ' + yy_() + '-', 4), 'Order_ID': pay.id, 'วันที่เข้าคิว': today(), 'ลาย/สี': it.name + (it.screenNote ? ' (' + it.screenNote + ')' : ''), 'จำนวน': it.qty, 'Product_ID': it.pid, 'สินค้า': it.name, 'จำนวนสั่ง': it.qty, 'ดีสะสม': 0, 'เสียสะสม': 0, 'สถานะ': 'รอสกรีน' });
   });
   return { ok: true, unmapped: rs.unmapped, _log: { ref: pay.id, detail: 'แก้รายการ (' + rs.items.length + ' รายการ ' + total + ' บ.)' } };
 }
@@ -461,16 +492,18 @@ function orderCancel(pay, me) {
   const j = jobsOf_(pay.id);
   j.prod.forEach(function (x) { if (x['สถานะ'] !== 'เสร็จ') updateWhere('Production', 'Job_ID', x['Job_ID'], { 'สถานะ': 'ยกเลิก' }); });
   j.scr.forEach(function (x) { if (x['สถานะ'] !== 'เสร็จ') updateWhere('ScreenJobs', 'Job_ID', x['Job_ID'], { 'สถานะ': 'ยกเลิก' }); });
-  updateWhere('Orders', 'Order_ID', pay.id, { 'สถานะ': 'ยกเลิก', 'อัปเดตล่าสุด': now() });
-  return { ok: true, _log: { ref: pay.id, detail: ord['ลูกค้า'] } };
+  updateWhere('Orders', 'Order_ID', pay.id, { 'สถานะ': 'ยกเลิก', 'หมายเหตุ': (ord['หมายเหตุ'] ? ord['หมายเหตุ'] + ' | ' : '') + 'ยกเลิก: ' + (pay.note || '-'), 'อัปเดตล่าสุด': now() });
+  return { ok: true, _log: { ref: pay.id, detail: ord['ลูกค้า'] + (pay.note ? ' — เหตุผล: ' + pay.note : '') } };
 }
 function recomputeOrder_(orderId) {
   const ord = rowsToObjs('Orders').filter(function (o) { return o['Order_ID'] === orderId; })[0];
   if (!ord || ord['สถานะ'] === 'ยกเลิก') return;
   let items = []; try { items = JSON.parse(ord['รายการ'] || '[]'); } catch (e) {}
   const delivered = deliveredOf_(orderId);
+  const orderedByKey = {};
+  items.forEach(function (it) { const k = it.pid || it.name; orderedByKey[k] = (orderedByKey[k] || 0) + it.qty; });
   const totalOrdered = items.reduce(function (s, it) { return s + it.qty; }, 0);
-  const totalDelivered = items.reduce(function (s, it) { return s + Math.min(delivered[it.pid || it.name] || 0, it.qty); }, 0);
+  const totalDelivered = Object.keys(orderedByKey).reduce(function (s, k) { return s + Math.min(delivered[k] || 0, orderedByKey[k]); }, 0);
   let status;
   if (totalOrdered > 0 && totalDelivered >= totalOrdered) status = 'ส่งแล้ว';
   else if (totalDelivered > 0) status = 'ส่งบางส่วน';
@@ -545,22 +578,30 @@ function deliver(pay, me) { // {orderId, items:[{pid?, name, qty}], note}
   const delivered = deliveredOf_(pay.orderId);
   const sending = (pay.items || []).map(function (it) { return { pid: it.pid || '', name: String(it.name).trim(), qty: Number(it.qty) || 0 }; }).filter(function (it) { return it.qty > 0; });
   if (!sending.length) return { ok: false, error: 'ไม่ได้ระบุจำนวนที่ส่ง' };
-  for (let i = 0; i < sending.length; i++) {
-    const it = sending[i];
-    const om = ordered.filter(function (x) { return (x.pid || x.name) === (it.pid || it.name); })[0];
-    if (!om) return { ok: false, error: '"' + it.name + '" ไม่อยู่ในออเดอร์นี้' };
-    const remain = om.qty - (delivered[it.pid || it.name] || 0);
-    if (it.qty > remain) return { ok: false, error: '"' + it.name + '" เหลือให้ส่งแค่ ' + remain + ' (สั่ง ' + om.qty + ')' };
+  // คิดเป็น pool ต่อสินค้า — สินค้าเดียวกันหลายบรรทัด (ทั้งในออเดอร์และใน payload) ไม่หลุด/ไม่เบิ้ล
+  const orderedByKey = {};
+  ordered.forEach(function (x) { const k = x.pid || x.name; orderedByKey[k] = (orderedByKey[k] || 0) + (Number(x.qty) || 0); });
+  const sendByKey = {};
+  sending.forEach(function (it) { const k = it.pid || it.name; sendByKey[k] = (sendByKey[k] || 0) + it.qty; });
+  const keys = Object.keys(sendByKey);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const nameOf = sending.filter(function (x) { return (x.pid || x.name) === k; })[0].name;
+    if (!(k in orderedByKey)) return { ok: false, error: '"' + nameOf + '" ไม่อยู่ในออเดอร์นี้' };
+    const remain = orderedByKey[k] - (delivered[k] || 0);
+    if (sendByKey[k] > remain) return { ok: false, error: '"' + nameOf + '" เหลือให้ส่งแค่ ' + remain + ' (สั่ง ' + orderedByKey[k] + ')' };
   }
-  const id = seq('DLV_NEXT', 'DL26-', 4);
+  const id = seq('DLV_NEXT', 'DL' + yy_() + '-', 4);
   appendObj('Deliveries', { 'Delivery_ID': id, 'เมื่อ': now(), 'Order_ID': pay.orderId, 'ลูกค้า': ord['ลูกค้า'], 'รายการ': JSON.stringify(sending), 'ผู้ส่ง': me.name, 'หมายเหตุ': pay.note || '' });
-  const unmapped = [];
+  const unmapped = [], negatives = [];
   sending.forEach(function (it) {
-    if (it.pid) stockShift_('สินค้า', it.pid, '', -it.qty, 'ส่งออก', id, me.name, 'ออเดอร์ ' + pay.orderId);
-    else unmapped.push(it.name);
+    if (it.pid) {
+      const r = stockShift_('สินค้า', it.pid, '', -it.qty, 'ส่งออก', id, me.name, 'ออเดอร์ ' + pay.orderId);
+      if (r.moved && r.bal < 0) negatives.push(it.name + ' เหลือ ' + r.bal);
+    } else unmapped.push(it.name);
   });
   const st = recomputeOrder_(pay.orderId);
-  return { ok: true, id: id, status: st, unmapped: unmapped, _log: { ref: pay.orderId, detail: ord['ลูกค้า'] + ' ส่ง ' + sending.map(function (i) { return i.name + '×' + i.qty; }).join(', ') + (unmapped.length ? ' (ไม่หักสต๊อก: ' + unmapped.join(',') + ')' : '') } };
+  return { ok: true, id: id, status: st, unmapped: unmapped, negatives: negatives, _log: { ref: pay.orderId, detail: ord['ลูกค้า'] + ' ส่ง ' + sending.map(function (i) { return i.name + '×' + i.qty; }).join(', ') + (unmapped.length ? ' (ไม่หักสต๊อก: ' + unmapped.join(',') + ')' : '') } };
 }
 
 // ─────────────────────────────────────────────
@@ -574,16 +615,18 @@ function billList(p) {
   return bills.reverse().slice(0, Number(p.limit) || 80);
 }
 function billCreate(pay, me) {
-  let items = [], customer = String(pay.customer || '').trim(), orderId = pay.orderId || '';
+  let items = [], customer = String(pay.customer || '').trim(), orderId = pay.orderId || '', unmapped = [];
   if (orderId) {
     const ord = rowsToObjs('Orders').filter(function (x) { return x['Order_ID'] === orderId; })[0];
     if (!ord) return { ok: false, error: 'ไม่พบออเดอร์ ' + orderId };
+    if (ord['สถานะ'] === 'ยกเลิก') return { ok: false, error: 'ออเดอร์นี้ถูกยกเลิกแล้ว — ออกบิลไม่ได้' };
     if (ord['Bill_No']) return { ok: false, error: 'ออเดอร์นี้ออกบิลแล้ว: ' + ord['Bill_No'] };
     try { items = JSON.parse(ord['รายการ'] || '[]'); } catch (e) {}
     customer = ord['ลูกค้า'];
   } else {
     const rs = resolveItems_(pay.items);
     items = rs.items;
+    unmapped = rs.unmapped;
     if (!customer || !items.length) return { ok: false, error: 'ต้องมีลูกค้าและรายการ' };
   }
   const total = items.reduce(function (s, it) { return s + (Number(it.qty) || 0) * (Number(it.price) || 0); }, 0);
@@ -600,11 +643,15 @@ function billCreate(pay, me) {
   });
   if (orderId) updateWhere('Orders', 'Order_ID', orderId, { 'Bill_No': no, 'อัปเดตล่าสุด': now() });
   else items.forEach(function (it) { if (it.pid) stockShift_('สินค้า', it.pid, '', -(Number(it.qty) || 0), 'ส่งออก', no, me.name, 'บิลอิสระ'); }); // ขายไม่ผ่านออเดอร์ = หักสต๊อกที่บิล
-  return { ok: true, no: no, total: total, due: due, customer: customer, items: items, date: today(), settings: m, _log: { ref: no, detail: customer + ' ' + total + ' บ. (' + (pay.type || 'เงินสด') + ')' } };
+  return { ok: true, no: no, total: total, due: due, customer: customer, items: items, date: today(), settings: m, unmapped: unmapped, _log: { ref: no, detail: customer + ' ' + total + ' บ. (' + (pay.type || 'เงินสด') + ')' + (unmapped.length ? ' (ไม่หักสต๊อก: ' + unmapped.join(',') + ')' : '') } };
 }
 function billPay(pay, me) {
-  const okB = updateWhere('Bills', 'Bill_No', pay.no, { 'สถานะ': 'ชำระแล้ว', 'ชำระเมื่อ': today(), 'ช่องทางชำระ': pay.channel || '', 'ผู้ทำ': me.name });
-  return { ok: okB, _log: { ref: pay.no, detail: 'รับชำระ (' + (pay.channel || '') + ')' } };
+  const b = rowsToObjs('Bills').filter(function (x) { return String(x['Bill_No']) === String(pay.no); })[0];
+  if (!b) return { ok: false, error: 'ไม่พบบิล ' + pay.no };
+  if (b['สถานะ'] === 'ยกเลิก') return { ok: false, error: 'บิลนี้ถูกยกเลิกไปแล้ว' };
+  if (b['สถานะ'] === 'ชำระแล้ว') return { ok: true, already: true };
+  updateWhere('Bills', 'Bill_No', pay.no, { 'สถานะ': 'ชำระแล้ว', 'ชำระเมื่อ': today(), 'ช่องทางชำระ': pay.channel || '', 'ผู้ทำ': me.name });
+  return { ok: true, _log: { ref: pay.no, detail: 'รับชำระ ' + b['ยอดรวม'] + ' บ. (' + (pay.channel || '') + ')' } };
 }
 function billCancel(pay, me) { // {no, note}
   if (!pay.note) return { ok: false, error: 'ยกเลิกบิลต้องใส่เหตุผล' };
@@ -621,13 +668,18 @@ function billCancel(pay, me) { // {no, note}
   return { ok: true, _log: { ref: pay.no, detail: 'ยกเลิก: ' + pay.note } };
 }
 function stmtCreate(pay, me) {
-  const bills = activeBills_().filter(function (b) { return (pay.billNos || []).indexOf(String(b['Bill_No'])) >= 0; });
-  if (!bills.length) return { ok: false, error: 'ไม่ได้เลือกบิล' };
+  const want = (pay.billNos || []).map(String);
+  const cust = String(pay.customer || '').trim();
+  const bills = activeBills_().filter(function (b) { return want.indexOf(String(b['Bill_No'])) >= 0 && b['สถานะ'] === 'ค้างชำระ' && !b['Stmt_No']; });
+  if (!bills.length) return { ok: false, error: 'ไม่ได้เลือกบิล หรือบิลถูกวางบิล/ชำระไปแล้ว — กดดึงบิลค้างใหม่' };
+  if (bills.length !== want.length) return { ok: false, error: 'บางบิลวางบิล/ชำระไปแล้ว — กดดึงบิลค้างใหม่' };
+  const wrong = bills.filter(function (b) { return String(b['ลูกค้า']).trim() !== cust; });
+  if (wrong.length) return { ok: false, error: 'บิล ' + wrong.map(function (b) { return b['Bill_No']; }).join(', ') + ' ไม่ใช่ของลูกค้า "' + cust + '" — กดดึงบิลค้างใหม่' };
   const total = bills.reduce(function (s, b) { return s + num(b['ยอดรวม']); }, 0);
   const no = nextCounter('STMT_NEXT', 4, (settingsMap().STMT_PREFIX || 'PKS') + '-' + Utilities.formatDate(new Date(), TZ, 'yyyy') + '-');
   appendObj('Statements', {
     'Stmt_No': no, 'วันที่วาง': today(), 'ลูกค้า': pay.customer, 'จำนวนบิล': bills.length,
-    'ยอดรวม': total, 'กำหนดเก็บเงิน': pay.due || '', 'สถานะ': 'รอเก็บ', 'บิลที่รวม': (pay.billNos || []).join(', '), 'หมายเหตุ': pay.note || '',
+    'ยอดรวม': total, 'กำหนดเก็บเงิน': pay.due || '', 'สถานะ': 'รอเก็บ', 'บิลที่รวม': bills.map(function (b) { return b['Bill_No']; }).join(', '), 'หมายเหตุ': pay.note || '',
   });
   bills.forEach(function (b) { updateWhere('Bills', 'Bill_No', b['Bill_No'], { 'สถานะ': 'วางบิลแล้ว', 'Stmt_No': no }); });
   return { ok: true, no: no, total: total, bills: bills, date: today(), due: pay.due || '', customer: pay.customer, settings: settingsMap(), _log: { ref: no, detail: pay.customer + ' ' + bills.length + ' บิล ' + total + ' บ.' } };
@@ -635,9 +687,10 @@ function stmtCreate(pay, me) {
 function stmtDone(pay, me) {
   const st = rowsToObjs('Statements').filter(function (s) { return s['Stmt_No'] === pay.no; })[0];
   if (!st) return { ok: false, error: 'ไม่พบใบวางบิล ' + pay.no };
+  if (st['สถานะ'] === 'เก็บแล้ว') return { ok: true, already: true };
   updateWhere('Statements', 'Stmt_No', pay.no, { 'สถานะ': 'เก็บแล้ว' });
   String(st['บิลที่รวม']).split(',').map(function (s) { return s.trim(); }).forEach(function (bn) {
-    if (bn) updateWhere('Bills', 'Bill_No', bn, { 'สถานะ': 'ชำระแล้ว', 'ชำระเมื่อ': today(), 'ผู้ทำ': me.name });
+    if (bn) updateWhere('Bills', 'Bill_No', bn, { 'สถานะ': 'ชำระแล้ว', 'ชำระเมื่อ': today(), 'ช่องทางชำระ': pay.channel || '', 'ผู้ทำ': me.name });
   });
   return { ok: true, _log: { ref: pay.no, detail: st['ลูกค้า'] + ' ' + st['ยอดรวม'] + ' บ.' } };
 }
@@ -686,10 +739,20 @@ function teamData(p, me) {
   // คิวส่ง: ออเดอร์ที่ยังมีของค้างส่ง
   const custs = rowsToObjs('Customers');
   const custBy = {}; custs.forEach(function (c) { custBy[String(c['ชื่อลูกค้า']).trim()] = c; });
+  const dAll = deliveredMapAll_();
   const deliverQueue = active.map(function (o) {
     let items = []; try { items = JSON.parse(o['รายการ'] || '[]'); } catch (e) {}
-    const d = deliveredOf_(o['Order_ID']);
-    const remain = items.map(function (it) { return { pid: it.pid, name: it.name, ordered: it.qty, sent: d[it.pid || it.name] || 0, remain: it.qty - (d[it.pid || it.name] || 0) }; }).filter(function (r) { return r.remain > 0; });
+    const d = dAll[o['Order_ID']] || {};
+    const pool = {};
+    items.forEach(function (it) {
+      const k = it.pid || it.name;
+      pool[k] = pool[k] || { pid: it.pid, name: it.name, ordered: 0 };
+      pool[k].ordered += it.qty;
+    });
+    const remain = Object.keys(pool).map(function (k) {
+      const sent = d[k] || 0;
+      return { pid: pool[k].pid, name: pool[k].name, ordered: pool[k].ordered, sent: sent, remain: pool[k].ordered - sent };
+    }).filter(function (r) { return r.remain > 0; });
     const c = custBy[String(o['ลูกค้า']).trim()] || {};
     return remain.length ? { id: o['Order_ID'], customer: o['ลูกค้า'], tel: c['เบอร์โทร'] || '', addr: c['ที่อยู่'] || '', due: o['กำหนดส่ง'], status: o['สถานะ'], remain: remain } : null;
   }).filter(Boolean).sort(function (a, b) { return String(a.due || '9999').localeCompare(String(b.due || '9999')); });
@@ -719,8 +782,9 @@ function dueOf_(b, creditBy) {
   if (b['กำหนดชำระ']) return String(b['กำหนดชำระ']);
   const days = Number(creditBy[String(b['ลูกค้า']).trim()]) || 30;
   const d = String(b['วันที่']);
-  if (d.length < 10) return '';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(d)) return '';   // บิลนำเข้าเก่าวันที่รูปแบบอื่น = ไม่นับเลยกำหนด (ดีกว่าบอร์ดล่ม)
   const t = new Date(d.slice(0, 10) + 'T00:00:00+07:00').getTime() + days * 86400000;
+  if (isNaN(t)) return '';
   return Utilities.formatDate(new Date(t), TZ, 'yyyy-MM-dd');
 }
 function execData() {
@@ -754,7 +818,8 @@ function execData() {
       const due = dueOf_(b, creditBy);
       if (due && due < td) { overdueSum += amt; overdueCount++; }
     }
-    if (String(b['ชำระเมื่อ']) === td && b['ประเภท'] === 'เงินสด') cashToday[b['ผู้ทำ'] || '(ไม่ระบุ)'] = (cashToday[b['ผู้ทำ'] || '(ไม่ระบุ)'] || 0) + amt;
+    const chan = String(b['ช่องทางชำระ'] || '').trim();
+    if (String(b['ชำระเมื่อ']) === td && (chan === 'เงินสด' || (!chan && b['ประเภท'] === 'เงินสด'))) cashToday[b['ผู้ทำ'] || '(ไม่ระบุ)'] = (cashToday[b['ผู้ทำ'] || '(ไม่ระบุ)'] || 0) + amt;
     if (d.length >= 10 && d >= d30) daily[d.slice(0, 10)] = (daily[d.slice(0, 10)] || 0) + amt;
   });
   const top = function (m2) { return Object.keys(m2).map(function (k) { return { name: k, amt: m2[k] }; }).sort(function (a, b) { return b.amt - a.amt; }).slice(0, 10); };
@@ -769,16 +834,16 @@ function execData() {
     .map(function (o) { return { id: o['Order_ID'], customer: o['ลูกค้า'], due: o['กำหนดส่ง'], status: o['สถานะ'] }; });
   const lateStmts = stmts.filter(function (s) { return s['สถานะ'] === 'รอเก็บ' && s['กำหนดเก็บเงิน'] && String(s['กำหนดเก็บเงิน']) < td; })
     .map(function (s) { return { no: s['Stmt_No'], customer: s['ลูกค้า'], due: s['กำหนดเก็บเงิน'], amt: num(s['ยอดรวม']) }; });
-  const lowStock = products.filter(function (p2) { return (p2['สถานะ'] || 'ใช้งาน') !== 'เลิกขาย' && p2['จุดเตือน'] !== '' && num(p2['คงเหลือ']) <= num(p2['จุดเตือน']); })
+  const lowStock = products.filter(function (p2) { return (p2['สถานะ'] || 'ใช้งาน') !== 'เลิกขาย' && (num(p2['คงเหลือ']) < 0 || (p2['จุดเตือน'] !== '' && num(p2['คงเหลือ']) <= num(p2['จุดเตือน']))); })
     .map(function (p2) { return { name: p2['ชื่อสินค้า'], bal: num(p2['คงเหลือ']), min: num(p2['จุดเตือน']), kind: 'สินค้า' }; })
     .concat(materials.filter(function (m2) { return m2['จุดสั่งซื้อ'] !== '' && num(m2['คงเหลือ']) <= num(m2['จุดสั่งซื้อ']); })
       .map(function (m2) { return { name: m2['ชื่อวัตถุดิบ'], bal: num(m2['คงเหลือ']), min: num(m2['จุดสั่งซื้อ']), kind: 'วัตถุดิบ' }; }));
-  const att = tailObjs('Attendance', 400);
+  const att = tailSince_('Attendance', 'วันที่', d30, 400);
   const attToday = att.filter(function (a) { return String(a['วันที่']) === td; });
   const attOpen = att.filter(function (a) { return a['เข้า'] && !a['ออก'] && String(a['วันที่']) < td; }).slice(-15);
 
   // ผลิต 30 วัน + ของเสียตามสาเหตุ + ผลงานรายคน
-  const plogs = tailObjs('ProductionLogs', 800).filter(function (l) { return String(l['เมื่อ']).slice(0, 10) >= d30; });
+  const plogs = tailSince_('ProductionLogs', 'เมื่อ', d30, 800).filter(function (l) { return String(l['เมื่อ']).slice(0, 10) >= d30; });
   let good30 = 0, waste30 = 0;
   const wasteBy = {}, byStaff = {};
   plogs.forEach(function (l) {
@@ -796,7 +861,7 @@ function execData() {
     const w = byStaff[s['ชื่อ']] || { good: 0, waste: 0, logs: 0 };
     return { name: s['ชื่อ'], dept: s['แผนก'], days: attByStaff[s['ชื่อ']] || 0, logs: w.logs, good: w.good, waste: w.waste };
   });
-  const adjust30 = tailObjs('StockMoves', 500).filter(function (m2) { return (m2['ประเภท'] === 'ปรับยอด' || m2['ประเภท'] === 'ของเสีย') && String(m2['เมื่อ']).slice(0, 10) >= d30; }).slice(-30).reverse();
+  const adjust30 = tailSince_('StockMoves', 'เมื่อ', d30, 500).filter(function (m2) { return (m2['ประเภท'] === 'ปรับยอด' || m2['ประเภท'] === 'ของเสีย') && String(m2['เมื่อ']).slice(0, 10) >= d30; }).slice(-30).reverse();
 
   const orderCounts = {};
   orders.forEach(function (o) { orderCounts[o['สถานะ']] = (orderCounts[o['สถานะ']] || 0) + 1; });
@@ -850,14 +915,14 @@ function ACTIONS() {
     pkProdLog: { auth: 'team', mut: true, fn: prodLog },
     pkJobClose: { auth: 'team', mut: true, fn: jobClose },
     pkDeliver: { auth: 'team', mut: true, fn: deliver },
-    pkBillCreate: { auth: 'team', mut: true, fn: billCreate },
-    pkBillPay: { auth: 'team', mut: true, fn: billPay },
-    pkBillCancel: { auth: 'team', mut: true, fn: billCancel },
-    pkStmtCreate: { auth: 'team', mut: true, fn: stmtCreate },
-    pkStmtDone: { auth: 'team', mut: true, fn: stmtDone },
+    pkBillCreate: { auth: 'team', mut: true, depts: ['ออฟฟิศ', 'บริหาร'], fn: billCreate },
+    pkBillPay: { auth: 'team', mut: true, depts: ['ออฟฟิศ', 'บริหาร'], fn: billPay },
+    pkBillCancel: { auth: 'team', mut: true, depts: ['ออฟฟิศ', 'บริหาร'], fn: billCancel },
+    pkStmtCreate: { auth: 'team', mut: true, depts: ['ออฟฟิศ', 'บริหาร'], fn: stmtCreate },
+    pkStmtDone: { auth: 'team', mut: true, depts: ['ออฟฟิศ', 'บริหาร'], fn: stmtDone },
     pkCustSave: { auth: 'team', mut: true, fn: custSave },
     pkStockIn: { auth: 'team', mut: true, fn: stockIn },
-    pkStockCount: { auth: 'team', mut: true, fn: stockCount },
+    pkStockCount: { auth: 'team', mut: true, depts: ['ผลิต', 'ออฟฟิศ', 'บริหาร'], fn: stockCount },
     pkClock: { auth: 'team', mut: true, fn: clock },
     pkExec: { auth: 'exec', fn: function () { return execData(); } },
     pkPriceSet: { auth: 'exec', mut: true, fn: priceSet },
@@ -877,6 +942,7 @@ function doGet(e) {
       me = who(p);
       if (!me) return jsonOut({ ok: false, error: 'ยังไม่ได้ล็อกอิน หรือรหัส/token หมดอายุ', needLogin: true });
       if (spec.auth === 'exec' && me.via !== 'exec') return jsonOut({ ok: false, error: 'เฉพาะผู้บริหาร' });
+      if (spec.depts && me.via === 'pin' && spec.depts.indexOf(String(me.dept).trim()) < 0) return jsonOut({ ok: false, error: 'สิทธิ์ไม่พอ (แผนก ' + me.dept + ') — ให้ออฟฟิศ/ผู้บริหารทำรายการนี้' });
     }
     const pay = p.payload ? JSON.parse(p.payload) : {};
     let result;
@@ -884,6 +950,13 @@ function doGet(e) {
       const lock = LockService.getScriptLock();
       if (!lock.tryLock(20000)) return jsonOut({ ok: false, error: 'ระบบคิวแน่น — ลองใหม่อีกครั้ง', retry: true });
       try {
+        // idempotency: request เดิม (กดซ้ำ/คิว replay/response หลุด) คืนผลเดิม ไม่ทำซ้ำ
+        const rid = pay && pay._rid ? 'rid:' + a + ':' + pay._rid : '';
+        const cache = rid ? CacheService.getScriptCache() : null;
+        if (rid) {
+          const hit = cache.get(rid);
+          if (hit) return jsonOut(JSON.parse(hit));
+        }
         result = spec.fn(pay, me, p);
         if (result && result.ok && a !== 'pkHealth') {
           const idn = (a === 'pkLogin' && result.me) ? { name: result.me.name, via: 'pin' } : (me || {});
@@ -892,6 +965,11 @@ function doGet(e) {
             'การกระทำ': ACT_LABEL[a] || a, 'อ้างอิง': (result._log && result._log.ref) || '',
             'รายละเอียด': (result._log && result._log.detail) || '',
           });
+        }
+        if (rid && result && result.ok) {
+          const copy = JSON.parse(JSON.stringify(result));
+          delete copy._log;
+          try { cache.put(rid, JSON.stringify(copy), 21600); } catch (e2) {}
         }
       } finally { lock.releaseLock(); }
     } else {
@@ -914,6 +992,8 @@ function importLegacyAccounting(srcId) {
   const seenCust = {};
   rowsToObjs('Customers').forEach(function (c) { seenCust[String(c['ชื่อลูกค้า']).trim()] = true; });
   let custCount = Object.keys(seenCust).length;
+  const seenBill = {};
+  rowsToObjs('Bills').forEach(function (b) { seenBill[String(b['Bill_No'])] = true; });   // รันซ้ำได้ ไม่เบิ้ล
   src.getSheets().forEach(function (sh) {
     const v = sh.getDataRange().getValues();
     if (v.length < 2) return;
@@ -944,6 +1024,8 @@ function importLegacyAccounting(srcId) {
       const name = String(r[iName] || '').trim();
       const no = String(r[iNo] || '').trim();
       if (!name || !no || no === 'เลขที่บิล') continue;
+      if (seenBill['เก่า-' + tabName + '-' + no]) continue;
+      seenBill['เก่า-' + tabName + '-' + no] = true;
       const rawDate = r[iDate] instanceof Date ? Utilities.formatDate(r[iDate], TZ, 'yyyy-MM-dd') : String(r[iDate] || '').trim();
       if (isAR) {
         const owe = num(r[head.indexOf('ยอดค้าง')]);
@@ -974,10 +1056,25 @@ function importLegacyAccounting(srcId) {
       }
     }
   });
+  // seed ตัวนับลูกค้า กัน custSave ออก Customer_ID ชนกับที่ import มา
+  const stg = tab('Settings');
+  const sv = stg.getDataRange().getValues();
+  let seeded = false;
+  for (let i = 1; i < sv.length; i++) {
+    if (String(sv[i][0]) === 'CUST_NEXT') { stg.getRange(i + 1, 2).setValue(Math.max(Number(sv[i][1]) || 1, custCount + 1)); seeded = true; break; }
+  }
+  if (!seeded) stg.appendRow(['CUST_NEXT', custCount + 1]);
   Logger.log('นำเข้าเสร็จ: บิล ' + bills + ' · ลูกหนี้เครดิต ' + ar + ' · ลูกค้าใหม่ ' + customers);
   Logger.log('⚠️ แท็บเครดิตกับแท็บบิลรายวันอาจมีบิลซ้ำกัน — เช็คก่อนใช้ยอดย้อนหลังจริงจัง');
 }
 
+function doPost(e) { return doGet(e); }
+// รันจาก editor เมื่อสงสัยว่ารหัสผู้บริหารหลุด — ได้รหัสใหม่ทันที (แจ้งผู้บริหารทุกคน)
+function rotateExecKey() {
+  const k = Utilities.getUuid().replace(/-/g, '');
+  setProp('PK_EXEC_KEY', k);
+  Logger.log('PK_EXEC_KEY ใหม่: ' + k);
+}
 function healthCheck() {
   Logger.log('P&K System ' + CODE_VERSION + ' · PK_SHEET_ID=' + (prop('PK_SHEET_ID') ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง — รัน setupPkSystem()'));
   Logger.log('PK_KEY=' + (prop('PK_KEY') ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง') + ' · PK_EXEC_KEY=' + (prop('PK_EXEC_KEY') ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง'));

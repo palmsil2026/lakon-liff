@@ -41,7 +41,9 @@ button.btn.gold{background:var(--gold);}
 button.mini{background:var(--green-soft); color:var(--green); border:0; border-radius:6px; padding:6px 12px; font:600 12.5px "Anuphan",sans-serif; cursor:pointer;}
 button.mini.warn{background:var(--warn-soft); color:var(--warn);}
 button.mini.gold{background:var(--gold-soft); color:var(--gold);}
-.item-row{display:grid; grid-template-columns:1fr 70px 78px 26px 26px; gap:6px; margin-bottom:6px; align-items:center;}
+.item-row{display:grid; grid-template-columns:1fr 64px 72px 34px 38px; gap:6px; margin-bottom:6px; align-items:center;}
+.item-row .i-del{padding:6px 0; min-height:32px;}
+.item-head{display:grid; grid-template-columns:1fr 64px 72px 34px 38px; gap:6px; font-size:11px; color:var(--muted); margin-top:4px;}
 .item-row input[type=checkbox]{width:18px; height:18px; justify-self:center;}
 .list{margin:0; padding:0; list-style:none;}
 .list li{padding:11px 0; border-bottom:1px dashed var(--line);}
@@ -110,7 +112,7 @@ table.st td{padding:6px; border-bottom:1px dashed var(--line); font-variant-nume
   <div class="card">
     <h2>ลงเวลา — <span id="clockDate"></span></h2>
     <div class="row" style="margin-top:8px">
-      <button class="clockbtn clock-in" id="btnIn">เข้า​งาน</button>
+      <button class="clockbtn clock-in" id="btnIn">เข้างาน</button>
       <button class="clockbtn clock-out" id="btnOut">ออกงาน</button>
     </div>
     <p class="meta" id="clockStat" style="margin:10px 0 0"></p>
@@ -124,6 +126,7 @@ table.st td{padding:6px; border-bottom:1px dashed var(--line); font-variant-nume
     <label>ลูกค้า</label>
     <input id="oCust" list="dlCust" placeholder="พิมพ์ชื่อลูกค้า">
     <label>รายการสินค้า <span class="meta">(เลือกจากรายการสินค้า — ราคากลางเติมให้ แก้ได้)</span></label>
+    <div class="item-head"><span>สินค้า</span><span>จำนวน</span><span>ราคา</span><span>สกรีน</span><span></span></div>
     <div id="oItems"></div>
     <button class="mini" id="oAdd">+ เพิ่มรายการ</button>
     <div class="row">
@@ -178,11 +181,13 @@ table.st td{padding:6px; border-bottom:1px dashed var(--line); font-variant-nume
 <section class="tabpane" id="t-office">
   <div class="card">
     <h2>ออกบิล</h2>
-    <label>จากออเดอร์ (พร้อมส่ง/ส่งแล้ว ที่ยังไม่มีบิล)</label>
+    <label>จากออเดอร์ (พร้อมส่ง/ส่งบางส่วน/ส่งแล้ว ที่ยังไม่มีบิล — บิลคิดเต็มยอดสั่ง)</label>
     <select id="bOrder"><option value="">— บิลอิสระ (ขายหน้าโรง ไม่มีออเดอร์ — หักสต๊อกทันที) —</option></select>
     <div id="bManual">
       <label>ลูกค้า</label><input id="bCust" list="dlCust">
-      <label>รายการ</label><div id="bItems"></div>
+      <label>รายการ</label>
+      <div class="item-head"><span>สินค้า</span><span>จำนวน</span><span>ราคา</span><span>สกรีน</span><span></span></div>
+      <div id="bItems"></div>
       <button class="mini" id="bAdd">+ เพิ่มรายการ</button>
     </div>
     <div class="row">
@@ -240,7 +245,8 @@ const GAS_URL = 'PASTE_PK_GAS_WEBAPP_URL_HERE';
 const QKEY = 'pk_queue';
 
 let TOKEN = localStorage.getItem('pk_token') || '';
-let ME = JSON.parse(localStorage.getItem('pk_me') || 'null');
+let ME = null;
+try { ME = JSON.parse(localStorage.getItem('pk_me') || 'null'); } catch(e){ localStorage.removeItem('pk_me'); }
 let DATA = null;
 let CURRENT_JOB = null;
 
@@ -249,49 +255,79 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const baht = n => (Number(String(n).replace(/,/g,'')) || 0).toLocaleString('th-TH');
 function toast(t){ const m=$('msg'); m.textContent=t; m.classList.add('show'); setTimeout(()=>m.classList.remove('show'),3000); }
 
+const MUT = /^pk(OrderSave|OrderEdit|OrderCancel|JobStart|ProdLog|JobClose|Deliver|BillCreate|BillPay|BillCancel|StmtCreate|StmtDone|CustSave|StockIn|StockCount|Clock|Login)$/;
+let INFLIGHT = false;   // กันกดปุ่มซ้ำระหว่างรอ — บันทึกได้ทีละรายการ
 async function api(action, payload=null, params={}, opts={}){
   if (GAS_URL.indexOf('PASTE_') === 0){ toast('ยังไม่ได้ตั้ง GAS_URL ในไฟล์'); throw new Error('no url'); }
-  const q = new URLSearchParams({ action, ...params });
-  if (TOKEN) q.set('token', TOKEN);
-  if (payload) q.set('payload', JSON.stringify(payload));
-  const url = GAS_URL + '?' + q.toString();
-  if (url.length > 7500){ toast('รายการยาวเกินไป — แบ่งเป็นสองรอบ'); throw new Error('url too long'); }
-  let r;
-  try { r = await fetch(url); }
-  catch(netErr){
-    if (opts.queueable){ pushQueue(action, payload); throw new Error('queued'); }
-    toast('เน็ตมีปัญหา — ลองใหม่'); throw netErr;
+  const isMut = MUT.test(action);
+  // idempotency key: กดซ้ำ/คิว replay/response หลุด → server คืนผลเดิม ไม่ทำซ้ำ
+  if (isMut && payload && !payload._rid) payload._rid = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  if (isMut && !opts._noGuard){
+    if (INFLIGHT){ toast('กำลังบันทึกอยู่ — รอสักครู่'); const eb = new Error('busy'); eb.busy = true; throw eb; }
+    INFLIGHT = true;
   }
-  const j = await r.json();
-  if (!j.ok){
-    if (j.needLogin){ doLogout(false); toast('เข้าสู่ระบบใหม่อีกครั้ง'); throw new Error('need login'); }
-    if (j.retry){ toast('ระบบคิวแน่น — กำลังลองใหม่…'); await new Promise(res=>setTimeout(res,1500));
-      return api(action, payload, params, {...opts, noRetry:true}); }
-    toast('❌ ' + (j.error || 'ผิดพลาด')); throw new Error(j.error);
+  try {
+    const q = new URLSearchParams({ action, ...params });
+    if (TOKEN) q.set('token', TOKEN);
+    if (payload) q.set('payload', JSON.stringify(payload));
+    const url = GAS_URL + '?' + q.toString();
+    if (url.length > 7500){ toast('รายการยาวเกินไป — แบ่งเป็นสองรอบ'); throw new Error('url too long'); }
+    let j;
+    try {
+      const r = await fetch(url);
+      j = await r.json();
+    } catch(netErr){
+      if (opts.queueable){ pushQueue(action, payload); throw new Error('queued'); }
+      toast('เน็ตมีปัญหา — ลองใหม่'); throw netErr;
+    }
+    if (!j.ok){
+      if (j.needLogin){ doLogout(false); toast('เข้าสู่ระบบใหม่อีกครั้ง'); const e1 = new Error('need login'); e1.needLogin = true; throw e1; }
+      if (j.retry && !opts.noRetry){ toast('ระบบคิวแน่น — กำลังลองใหม่…'); await new Promise(res=>setTimeout(res,1500));
+        return await api(action, payload, params, {...opts, noRetry:true, _noGuard:true}); }
+      toast('❌ ' + (j.error || 'ผิดพลาด'));
+      const err = new Error(j.error || 'ผิดพลาด'); err.isBiz = true; throw err;
+    }
+    return j;
+  } finally {
+    if (isMut && !opts._noGuard) INFLIGHT = false;
   }
-  return j;
 }
 
 // ─── คิวออฟไลน์ (ลงเวลา/ลงผลผลิต ไม่หายแม้เน็ตหลุด) ───
 function getQueue(){ try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(e){ return []; } }
 function pushQueue(action, payload){
-  const q = getQueue(); q.push({action, payload});
+  const q = getQueue(); q.push({ action, payload, uid: ME && ME.id });
   localStorage.setItem(QKEY, JSON.stringify(q));
   renderQueue(); toast('เน็ตหลุด — เก็บไว้ส่งใหม่อัตโนมัติ');
 }
 function renderQueue(){
   const q = getQueue();
+  const mine = q.filter(x => !x.uid || (ME && x.uid === ME.id)).length;
+  const others = q.length - mine;
   $('qBanner').hidden = !q.length;
-  $('qText').textContent = 'รอส่ง ' + q.length + ' รายการ (ลงเวลา/ผลผลิต) — จะส่งให้เมื่อเน็ตกลับมา';
+  $('qText').textContent = 'รอส่ง ' + mine + ' รายการ' + (others ? ' (+ของเพื่อนที่ใช้เครื่องนี้ ' + others + ')' : '') + ' — ส่งอัตโนมัติเมื่อเน็ตกลับมา';
 }
+let FLUSHING = false;
 async function flushQueue(){
-  let q = getQueue();
-  while (q.length){
-    try { await api(q[0].action, q[0].payload); q.shift(); localStorage.setItem(QKEY, JSON.stringify(q)); }
-    catch(e){ break; }
-  }
-  renderQueue();
+  if (FLUSHING) return;
+  FLUSHING = true;
+  try {
+    const q = getQueue();
+    let i = 0;
+    while (i < q.length){
+      if (q[i].uid && (!ME || q[i].uid !== ME.id)){ i++; continue; }   // ของคนอื่น — รอเจ้าตัวล็อกอินเครื่องนี้
+      try {
+        await api(q[i].action, q[i].payload, {}, { _noGuard:true });
+        q.splice(i, 1); localStorage.setItem(QKEY, JSON.stringify(q));
+      } catch(e){
+        if (e.isBiz){ toast('⚠️ รายการค้างส่งถูกปฏิเสธ — ข้ามให้ (' + e.message + ')'); q.splice(i, 1); localStorage.setItem(QKEY, JSON.stringify(q)); }
+        else break;   // เน็ต/ต้องล็อกอิน — เก็บไว้ลองใหม่
+      }
+    }
+  } finally { FLUSHING = false; renderQueue(); }
 }
+window.addEventListener('online', () => flushQueue());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQueue(); });
 
 // ─── ล็อกอิน ───
 function doLogout(clear=true){
@@ -322,9 +358,8 @@ const TAB_DEF = [
   { id:'office',  label:'ออฟฟิศ', depts:['ออฟฟิศ','บริหาร'] },
 ];
 function myTabs(){
-  const d = (ME && ME.dept) || '';
-  const known = ['ออฟฟิศ','บริหาร','ผลิต','สกรีน','ส่งของ'].includes(d);
-  return TAB_DEF.filter(t => t.depts === '*' || !known || t.depts.includes(d));
+  const d = ((ME && ME.dept) || '').trim();
+  return TAB_DEF.filter(t => t.depts === '*' || t.depts.includes(d));   // แผนกไม่รู้จัก = เห็นแค่หน้าหลัก (แจ้งผู้บริหารแก้แผนกในบอร์ด)
 }
 function buildNav(){
   const tabs = myTabs();
@@ -366,7 +401,7 @@ function renderClock(){
 }
 async function clockDo(doWhat){
   try {
-    const j = await api('pkClock', { do: doWhat }, {}, { queueable:true });
+    const j = await api('pkClock', { do: doWhat, at: Date.now() }, {}, { queueable:true });
     if (j.already) toast('ลงเวลาเข้าแล้ว ' + j.in);
     else if (j.warn) toast(j.warn);
     else toast(doWhat==='in' ? '✅ เข้างาน ' + j.in : '✅ ออกงาน ' + j.out + (j.hours?' ('+j.hours+' ชม.)':''));
@@ -523,7 +558,7 @@ $('dlvList').addEventListener('click', async e => {
   if (!items.length) return toast('ใส่จำนวนที่ส่ง');
   if (!confirm('ยืนยันส่ง ' + q.customer + ': ' + items.map(i => i.name + '×' + i.qty).join(', '))) return;
   const r = await api('pkDeliver', { orderId: q.id, items });
-  toast('🚚 บันทึกส่งแล้ว → ' + r.status + (r.unmapped.length ? ' ⚠️ ไม่หักสต๊อก: ' + r.unmapped.join(',') : ''));
+  toast('🚚 บันทึกส่งแล้ว → ' + r.status + (r.unmapped.length ? ' ⚠️ ไม่หักสต๊อก: ' + r.unmapped.join(',') : '') + (r.negatives && r.negatives.length ? ' ⚠️ สต๊อกติดลบ: ' + r.negatives.join(', ') : ''));
   loadData();
 });
 
@@ -531,18 +566,23 @@ $('dlvList').addEventListener('click', async e => {
 function renderStock(){
   $('stProd').innerHTML = '<tr><th>สินค้า</th><th style="text-align:right">คงเหลือ</th><th style="text-align:right">จุดเตือน</th></tr>' +
     DATA.products.map(p => {
-      const low = p['จุดเตือน'] !== '' && Number(String(p['คงเหลือ']).replace(/,/g,'')) <= Number(p['จุดเตือน']);
+      const low = p['จุดเตือน'] !== '' && Number(String(p['คงเหลือ']).replace(/,/g,'')) <= Number(String(p['จุดเตือน']).replace(/,/g,''));
       return '<tr><td>' + esc(p['ชื่อสินค้า']) + '</td><td style="text-align:right" class="' + (low?'low':'') + '">' + baht(p['คงเหลือ']) + '</td><td style="text-align:right" class="meta">' + esc(p['จุดเตือน']||'—') + '</td></tr>';
     }).join('');
   $('stMat').innerHTML = '<tr><th>วัตถุดิบ</th><th style="text-align:right">คงเหลือ</th><th style="text-align:right">จุดสั่งซื้อ</th></tr>' +
     (DATA.materials.map(m => {
-      const low = m['จุดสั่งซื้อ'] !== '' && Number(String(m['คงเหลือ']).replace(/,/g,'')) <= Number(m['จุดสั่งซื้อ']);
+      const low = m['จุดสั่งซื้อ'] !== '' && Number(String(m['คงเหลือ']).replace(/,/g,'')) <= Number(String(m['จุดสั่งซื้อ']).replace(/,/g,''));
       return '<tr><td>' + esc(m['ชื่อวัตถุดิบ']) + '</td><td style="text-align:right" class="' + (low?'low':'') + '">' + baht(m['คงเหลือ']) + '</td><td style="text-align:right" class="meta">' + esc(m['จุดสั่งซื้อ']||'—') + '</td></tr>';
     }).join('') || '<tr><td colspan="3" class="meta">ยังไม่มีวัตถุดิบ — เพิ่มจาก "รับของเข้า"</td></tr>');
   const opts = DATA.products.map(p => '<option value="สินค้า|' + esc(p['Product_ID']) + '">' + esc(p['ชื่อสินค้า']) + ' (สินค้า)</option>')
     .concat(DATA.materials.map(m => '<option value="วัตถุดิบ|' + esc(m['Material_ID']) + '">' + esc(m['ชื่อวัตถุดิบ']) + ' (วัตถุดิบ)</option>'));
   $('scItem').innerHTML = opts.join('');
 }
+$('siKind').addEventListener('change', () => {
+  const mat = $('siKind').value === 'วัตถุดิบ';
+  $('siName').setAttribute('list', mat ? 'dlMat' : 'dlProd');
+  $('siName').placeholder = mat ? 'ชื่อ (วัตถุดิบใหม่พิมพ์ได้เลย)' : 'เลือกสินค้าจากรายการ (สินค้าใหม่ให้ประธานเพิ่ม)';
+});
 $('siSave').addEventListener('click', async () => {
   const j = await api('pkStockIn', { kind: $('siKind').value, name: $('siName').value.trim(), qty: Number($('siQty').value), note: $('siNote').value });
   toast('✅ รับเข้าแล้ว — คงเหลือ ' + baht(j.bal));
@@ -561,6 +601,7 @@ $('scSave').addEventListener('click', async () => {
 function renderOffice(){
   $('bOrder').innerHTML = '<option value="">— บิลอิสระ (ขายหน้าโรง ไม่มีออเดอร์ — หักสต๊อกทันที) —</option>' +
     DATA.billable.map(o => '<option value="' + esc(o.id) + '">' + esc(o.id) + ' · ' + esc(o.customer) + ' · ' + baht(o.total) + ' บ.</option>').join('');
+  $('bManual').style.display = $('bOrder').value ? 'none' : '';
   $('billList').innerHTML = DATA.bills.slice(0,15).map(b =>
     '<li><div class="li-top"><div><b>' + esc(b['Bill_No']) + '</b> <span class="meta">' + esc(b['ลูกค้า']) + ' · ' + baht(b['ยอดรวม']) + ' บ. · ' + esc(b['ประเภท']) + '</span></div>' +
     '<div><span class="chip ' + CHIP(b['สถานะ']) + '">' + esc(b['สถานะ']) + '</span> ' +
@@ -569,7 +610,7 @@ function renderOffice(){
     (['ชำระแล้ว','ยกเลิก'].includes(b['สถานะ']) ? '' : ' <button class="mini warn" data-void="' + esc(b['Bill_No']) + '">ยกเลิก</button>') +
     '</div></div></li>').join('') || '<li class="meta">ยังไม่มีบิล</li>';
   $('stmtList').innerHTML = DATA.stmts.map(s =>
-    '<li><div class="li-top"><div><b>' + esc(s['Stmt_No']) + '</b> <span class="meta">' + esc(s['ลูกค้า']) + ' · ' + s['จำนวนบิล'] + ' บิล · ' + baht(s['ยอดรวม']) + ' บ. · เก็บ ' + esc(s['กำหนดเก็บเงิน']||'-') + '</span></div>' +
+    '<li><div class="li-top"><div><b>' + esc(s['Stmt_No']) + '</b> <span class="meta">' + esc(s['ลูกค้า']) + ' · ' + esc(s['จำนวนบิล']) + ' บิล · ' + baht(s['ยอดรวม']) + ' บ. · เก็บ ' + esc(s['กำหนดเก็บเงิน']||'-') + '</span></div>' +
     '<button class="mini" data-collect="' + esc(s['Stmt_No']) + '">เก็บแล้ว</button></div></li>').join('') || '<li class="meta">ไม่มีใบวางบิลรอเก็บ</li>';
 }
 $('bType').addEventListener('change', function(){ $('bDueWrap').hidden = this.value !== 'เครดิต'; });
@@ -630,7 +671,8 @@ $('stmtList').addEventListener('click', async e => {
   const no = e.target.dataset && e.target.dataset.collect;
   if (!no) return;
   if (!confirm('เก็บเงินใบวางบิล ' + no + ' ครบแล้ว?')) return;
-  await api('pkStmtDone', { no }); toast('ปิดใบวางบิลแล้ว'); loadData();
+  const ch = prompt('เงินเข้าช่องทางไหน (เงินสด/โอน KBank/...)', 'เงินสด'); if (ch === null) return;
+  await api('pkStmtDone', { no, channel: ch }); toast('ปิดใบวางบิลแล้ว'); loadData();
 });
 
 // ─── เอกสารพิมพ์ ───
