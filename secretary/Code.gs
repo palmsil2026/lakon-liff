@@ -194,6 +194,13 @@ function doPost(e) {
     if (e && e.parameter && e.parameter.action === 'attImport') {
       return jsonOut(attImportRows(e.parameter.key, e.parameter.rows));
     }
+    // 📚 อัปโหลดเข้าคลังข้อมูลจากบอร์ดบน GitHub Pages — ไฟล์เป็น base64 ยาวเกินใส่ URL จึงต้อง POST
+    // (บอร์ดรุ่นที่ GAS เสิร์ฟเองใช้ google.script.run เรียก rpcLibUpload ตรง ๆ — ตัวเดียวกัน)
+    if (e && e.parameter && e.parameter.action === 'libUpload') {
+      return jsonOut(rpcLibUpload(e.parameter.key, {
+        name: e.parameter.name, mime: e.parameter.mime, b64: e.parameter.b64, hint: e.parameter.hint
+      }));
+    }
     // 💬 แชทคุณเลขาจากบอร์ด — ส่งแบบ POST เพราะคำถามยาวเกิน URL ได้ และคำตอบยาวใช้เวลาคิดนาน
     if (e && e.parameter && e.parameter.action === 'chat') {
       if (e.parameter.key !== cfg('QUEUE_KEY')) return jsonOut({ ok: false, error: 'unauthorized' });
@@ -1835,7 +1842,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-30a';
+const CODE_VERSION = '2026-08-31a';
 
 function healthCheck() {
   const L = [];

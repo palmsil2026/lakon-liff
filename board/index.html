@@ -233,6 +233,7 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
 <div class="chips" id="chips"></div>
 <div class="upd" id="upd"></div>
 <div class="mid">
+  <div id="upbox"></div>
   <div id="projects"></div>
   <div id="cards"></div>
   <div class="empty" id="empty" style="display:none">ไม่มีงานในหมวดนี้ ✨</div>
@@ -298,7 +299,7 @@ button{font-family:inherit;border:none;cursor:pointer;background:none;color:inhe
 // ══════════ Mission Board — หน้าบ้านอยู่ GitHub Pages (เร็ว/นิ่ง) ข้อมูลมาจาก GAS ══════════
 const GAS = 'https://script.google.com/macros/s/AKfycbwgxZ_yxK21-GcB0yuZSFw-uT7yr9J322ZyMT2H3QsHgcnEuvvhUP3I-yJH3hq9dC9J/exec';
 // เวอร์ชันหน้าเว็บ — โชว์ในหัวห้องแชท เอาไว้เช็คว่าเบราว์เซอร์โหลดของใหม่แล้วจริงไหม (เจอปัญหาแคชหน้าเก่ามาแล้ว)
-const BOARD_VER = '23d';
+const BOARD_VER = '31a';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -448,8 +449,57 @@ function officeRender() {
   });
 }
 
+// ══════════ 📚 อัปโหลดเข้าคลังข้อมูล — โผล่เมื่อแตะการ์ด "ฝ่ายข้อมูล" (เจ้าของเท่านั้น) ══════════
+// เลือกได้หลายไฟล์ · คุณเลขาดูให้ว่าแต่ละไฟล์คืออะไร แล้วจัดหมวด/ตั้งชื่อ/แยกโฟลเดอร์ Drive ให้เอง
+const UP_MAX = 3800000;   // ~3.8MB/ไฟล์ — ใหญ่กว่านี้ base64 แล้วเกินที่ GAS รับไหว
+function upRender() {
+  const box = $('upbox');
+  if (MODE !== 'owner' || FD !== 'data') { box.innerHTML = ''; return; }
+  if ($('upGo')) return;   // เปิดค้างอยู่แล้ว อย่าวาดทับ (ผู้ใช้อาจเลือกไฟล์ไว้)
+  box.innerHTML = `<div class="prj">
+    <div class="prj-h"><span>📚</span><span class="t">อัปโหลดเข้าคลังข้อมูล</span></div>
+    <div style="font-size:12px;color:var(--sub);margin:6px 0 10px;line-height:1.6">เลือกได้หลายไฟล์เลยค่ะ — ดิฉันจะดูให้ว่าแต่ละไฟล์คืออะไร
+      แล้วจัดหมวด (ละกอน / เพียวซ่า / คาเฟ่ / การเงิน / ดีไซน์) ตั้งชื่อ และแยกเก็บใน Drive ให้เอง</div>
+    <input type="file" id="upF" multiple style="max-width:100%;font-size:.85rem">
+    <input type="text" id="upH" placeholder="ใบ้สั้นๆ ช่วยจัดหมวด (ไม่บังคับ) เช่น ฉลากเพียวซ่าชุดไฟนอล"
+      style="width:100%;margin-top:9px;padding:11px;border:1.5px solid var(--line);border-radius:12px;font-family:inherit;font-size:.85rem;background:var(--bg);color:var(--ink)">
+    <div style="margin-top:10px"><button class="bt bt-main" id="upGo">📤 อัปโหลดเข้าคลัง</button></div>
+    <div id="upS" style="margin-top:8px;font-size:12px;color:var(--sub);line-height:1.9"></div></div>`;
+  $('upGo').onclick = upGo;
+}
+async function upGo() {
+  const fs = $('upF').files;
+  if (!fs || !fs.length) { toast('เลือกไฟล์ก่อนนะคะ', false); return; }
+  const hint = $('upH').value || '', st = $('upS'), btn = $('upGo');
+  btn.disabled = true;
+  let ok = 0;
+  for (let i = 0; i < fs.length; i++) {
+    const f = fs[i];
+    if (f.size > UP_MAX) { st.innerHTML += `<br>⚠️ ${esc(f.name)} ใหญ่เกิน 3.8MB — ส่งทางไลน์แทนได้ค่ะ`; continue; }
+    st.innerHTML += `<br>⏳ (${i + 1}/${fs.length}) ${esc(f.name)} กำลังวิเคราะห์...`;
+    try {
+      const b64 = await new Promise((res, rej) => {
+        const rd = new FileReader();
+        rd.onload = () => res(String(rd.result).split(',')[1]);
+        rd.onerror = () => rej(new Error('อ่านไฟล์ไม่ได้'));
+        rd.readAsDataURL(f);
+      });
+      // คิดหมวดด้วย AI ต่อไฟล์ → ใช้เวลาได้หลายสิบวินาที จึงส่ง POST แบบรอยาว
+      const j = await apiPost({ action: 'libUpload', name: f.name, mime: f.type || '', b64, hint });
+      if (j && j.ok) ok++;
+      st.innerHTML += `<br>${j && j.ok ? '✅' : '⚠️'} ${esc(f.name)} → ${esc(j ? j.msg : 'ไม่ตอบกลับ')}`;
+    } catch (e) {
+      st.innerHTML += `<br>⚠️ ${esc(f.name)}: ${esc(e.message || e)}`;
+    }
+  }
+  btn.disabled = false;
+  st.innerHTML += `<br><b>เสร็จแล้ว ${ok}/${fs.length} ไฟล์ค่ะ</b>`;
+  toast(ok ? 'เข้าคลังแล้ว ' + ok + ' ไฟล์' : 'ยังไม่มีไฟล์เข้าคลัง', ok > 0);
+}
+
 function render() {
   officeRender();
+  upRender();
   const open = TASKS.filter(t => !done(t) && inDept(t));
   const S = [
     ['open',   open.length, 'งานค้าง', 'c-gold'],
