@@ -1,0 +1,4 @@
+# ของ clasp — สร้างชั่วคราวตอน deploy อัตโนมัติ ห้ามขึ้น repo (มี Script ID/ token path)
+.clasp.json
+.clasprc.json
+.claspignore

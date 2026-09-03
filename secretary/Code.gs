@@ -21,8 +21,10 @@
 const MODEL = 'claude-sonnet-5';
 
 // ===== ดึงค่าลับจาก Script Properties =====
+const _CFG_MEM_ = {};   // อ่าน Script Properties ครั้งเดียวต่อคำขอ (เดิมถูกเรียก ~40 ครั้งต่อการโหลดห้องผู้บริหาร)
 function cfg(key) {
-  return PropertiesService.getScriptProperties().getProperty(key) || '';
+  if (!(key in _CFG_MEM_)) _CFG_MEM_[key] = PropertiesService.getScriptProperties().getProperty(key) || '';
+  return _CFG_MEM_[key];
 }
 
 // ===== บุคลิก + กฎของคุณเลขา (ต้นฉบับอ่านง่ายอยู่ที่ secretary/system-prompt.md) =====
@@ -227,6 +229,8 @@ function doPost(e) {
 // เปิด URL ในเบราว์เซอร์จะเจอข้อความนี้ / หรือให้ Claude Code ดึงคิวงาน AI
 function doGet(e) {
   const p = (e && e.parameter) ? e.parameter : {};
+  // 🩺 เวอร์ชันที่รันจริง — ระบบ deploy อัตโนมัติยิงเช็คหลัง redeploy (ไม่มีข้อมูลอ่อนไหว จึงไม่ต้องใช้ key)
+  if (p.action === 'version') return jsonOut({ ok: true, version: CODE_VERSION });
   if (p.action === 'aiqueue') {
     if (p.key !== cfg('QUEUE_KEY')) return jsonOut({ ok: false, error: 'unauthorized' });
     return jsonOut({ ok: true, tasks: getAIQueue() });
@@ -285,7 +289,7 @@ function doGet(e) {
   }
 
   // 🏭 แอปผู้บริหาร — ภาพรวมบริษัท (รับทั้ง EXEC_KEY และ QUEUE_KEY ของ CEO)
-  if (p.action === 'exec') return jsonOut(execDashboard(p.key, p.month));
+  if (p.action === 'exec') { PLANT_FRESH = String(p.fresh || '') === '1'; return jsonOut(execDashboard(p.key, p.month)); }
   if (p.action === 'execSave') {
     return jsonOut(execSavePlan(p.key, { row: p.row, level: p.level, title: p.title, detail: p.detail,
                                          period: p.period, kpi: p.kpi, status: p.status, del: p.del }));
@@ -1842,7 +1846,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-09-03a';
+const CODE_VERSION = '2026-09-03b';
 
 function healthCheck() {
   const L = [];
@@ -2701,14 +2705,38 @@ function plantSS() {
   try { return ssById(sheetIdFrom(id)); } catch (e) { console.error('plantSS: ' + e); return null; }
 }
 // อ่านทั้งแท็บเป็น array (แคช 10 นาที กันยิงซ้ำถี่ๆ ตอนหลายคนเปิดแอปพร้อมกัน)
+// ⚡ อ่านชีตโรงน้ำแบบแคช 2 ชั้น (แก้ห้องผู้บริหารช้า — เดิมคำขอเดียวอ่านชีต ~40 รอบ แท็บเดียวกันซ้ำ 2-6 รอบ)
+//  ชั้น 1 หน่วยความจำต่อคำขอ: แท็บเดียวกันอ่านครั้งเดียว ใครเรียกซ้ำได้ของเดิม
+//  ชั้น 2 CacheService 90 วิ: เฉพาะแท็บที่ระบบขายเป็นคนเขียน (เราอ่านอย่างเดียว) → กดเปลี่ยนเดือนติด ๆ กันไม่ต้องรออ่านชีตใหม่
+//    แท็บที่แอปนี้เขียนเอง (Staff/HR_*/Leaves/Attendance) ไม่เข้าแคชชั้น 2 — แก้แล้วต้องเห็นทันที
+//  ปุ่มรีเฟรชในแอปส่ง fresh=1 → ข้ามแคชชั้น 2 ทั้งคำขอ (PLANT_FRESH)
+//  หมายเหตุ: ค่าที่ผ่าน JSON วันที่กลายเป็นสตริง ISO — execDateKey/new Date รับได้อยู่แล้ว
+const PLANT_MEM = {};
+let PLANT_FRESH = false;
+const PLANT_CACHEABLE = /^(Orders|Orders_LINE|Orders_Sales|Orders_OEM|Products|Customers|Customers_Sales|ProductionLog|ProductionRuns|Payments|CashRemits|Visits|Deliveries|VanLoads|DeliveryRounds|StandingOrders)$/;
+function plantVals(tab) {   // คืน [[หัวตาราง], ...แถวข้อมูล] หรือ null ถ้าไม่มีแท็บ/ยังไม่ตั้ง PLANT_SHEET_ID
+  if (tab in PLANT_MEM) return PLANT_MEM[tab];
+  const cacheable = PLANT_CACHEABLE.test(tab) && !PLANT_FRESH;
+  let v = null;
+  if (cacheable) { try { const c = CacheService.getScriptCache().get('pv:' + tab); if (c) v = JSON.parse(c); } catch (e) {} }
+  if (!v) {
+    const ss = plantSS();
+    if (ss) {
+      try {
+        const sh = ss.getSheetByName(tab);
+        if (sh && sh.getLastRow() >= 1 && sh.getLastColumn() >= 1) v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+      } catch (e) { console.error('plantVals ' + tab + ': ' + e); }
+    }
+    if (v && PLANT_CACHEABLE.test(tab)) {
+      try { const js = JSON.stringify(v); if (js.length < 95000) CacheService.getScriptCache().put('pv:' + tab, js, 90); } catch (e) {}
+    }
+  }
+  return (PLANT_MEM[tab] = v);
+}
 function plantRows(tab, maxRows) {
-  const ss = plantSS(); if (!ss) return [];
-  try {
-    const sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) return [];
-    const last = sh.getLastRow();
-    const start = maxRows ? Math.max(2, last - maxRows + 1) : 2;
-    return sh.getRange(start, 1, last - start + 1, sh.getLastColumn()).getValues();
-  } catch (e) { console.error('plantRows ' + tab + ': ' + e); return []; }
+  const v = plantVals(tab); if (!v || v.length < 2) return [];
+  const rows = v.slice(1);
+  return (maxRows && rows.length > maxRows) ? rows.slice(rows.length - maxRows) : rows;
 }
 // 👥 ชีต Staff ของโรงงาน — โครงจริง (ยืนยันกับชีต 2026-08-22): A=No. B=Name C=Staff_ID D=Role E=PIN F=Active
 // v18 ฝั่งโรงน้ำต่อคอลัมน์ท้ายตาราง (G–K: สาย/บทบาทขาย/เรตค่าจ้าง/ประเภทจ้าง/วันเริ่มงาน และเพิ่มได้อีก)
@@ -2725,13 +2753,10 @@ function plantStaffCols(sh) {
 }
 // หาตำแหน่งคอลัมน์จากหัวตาราง (ระบบขายเพิ่มคอลัมน์ได้เรื่อย ๆ — ห้าม hardcode ตำแหน่งของใหม่)
 function plantColIdx(tab, re) {
-  const ss = plantSS(); if (!ss) return -1;
-  try {
-    const sh = ss.getSheetByName(tab); if (!sh || sh.getLastColumn() < 1) return -1;
-    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
-    for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i;
-    return -1;
-  } catch (e) { return -1; }
+  const v = plantVals(tab); if (!v || !v.length) return -1;
+  const head = v[0].map(String);
+  for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i;
+  return -1;
 }
 // 💰 สมุดรับเงินของระบบขาย v14 (ชีต Payments) — แหล่งความจริงเรื่อง "เก็บเงินได้จริง"
 // v14 เลิกใช้สถานะ "เก็บเงินแล้ว" แล้ว ห้ามอ่านสถานะออเดอร์มาตัดสินว่าได้เงิน
@@ -2743,8 +2768,7 @@ function plantColIdx(tab, re) {
 function plantPayments() {
   const ss = plantSS(); if (!ss) return null;
   try {
-    const sh = ss.getSheetByName('Payments'); if (!sh || sh.getLastRow() < 2) return null;
-    const vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+    const vals = plantVals('Payments'); if (!vals || vals.length < 2) return null;
     const head = vals[0].map(String);
     const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
     const iOrd = find(/order_?id|ออเดอร์|เลขที่บิล/i);   // ต้องไม่ไปชน Payment_ID
@@ -2780,8 +2804,7 @@ function plantPayments() {
 function plantBookings() {
   const ss = plantSS(); if (!ss) return null;
   try {
-    const sh = ss.getSheetByName('StandingOrders'); if (!sh || sh.getLastRow() < 1) return null;
-    const vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+    const vals = plantVals('StandingOrders'); if (!vals || !vals.length) return null;
     const head = vals[0].map(function (h) { return String(h).trim(); });
     const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
     const iId = find(/booking_?id|เลขที่ใบจอง/i), iDate = find(/^วันที่สั่ง|^วันที่$|^date/i);
@@ -2951,9 +2974,9 @@ function plantFeed(monthPrefix) {
     });
     // ของเสียจากรอบผลิต (ProductionRuns) ถ้ามีคอลัมน์ waste
     try {
-      const runSh = ss.getSheetByName('ProductionRuns');
-      if (runSh && runSh.getLastRow() > 1) {
-        const head = runSh.getRange(1, 1, 1, runSh.getLastColumn()).getValues()[0].map(String);
+      const runV = plantVals('ProductionRuns');
+      if (runV && runV.length > 1) {
+        const head = runV[0].map(String);
         const iDate = head.findIndex(function (h) { return /วันที่/.test(h); });
         const iProd = head.findIndex(function (h) { return /สินค้า/.test(h); });
         const iWaste = head.findIndex(function (h) { return /เสีย/.test(h); });
@@ -3734,8 +3757,9 @@ function hrSheet(name) {
 }
 function hrRowsByHead(name) {
   try {
-    const s = hrSheet(name); if (!s || s.getLastRow() < 2) return [];
-    const vals = s.getRange(1, 1, s.getLastRow(), s.getLastColumn()).getValues();
+    let vals = plantVals(name);
+    if (!vals) { const s = hrSheet(name); if (!s || s.getLastRow() < 2) return []; vals = s.getRange(1, 1, s.getLastRow(), s.getLastColumn()).getValues(); PLANT_MEM[name] = vals; }
+    if (vals.length < 2) return [];
     const head = vals[0].map(String);
     return vals.slice(1).map(function (r, i) {
       const o = { _row: i + 2 };

@@ -554,14 +554,24 @@ function loaderDone() {
   setTimeout(() => $('loader').classList.add('off'), 380);
 }
 
-async function load() {
+// ⚡ แคชรายเดือนในเครื่อง — กด ◀ ▶ กลับไปเดือนที่เคยดูแล้ว = ขึ้นทันที ไม่ต้องรอเซิร์ฟเวอร์
+//    (เซิร์ฟเวอร์เองก็แคชการอ่านชีต 90 วิ · ปุ่ม 🔄 ส่ง fresh=1 ข้ามแคชทั้งสองชั้น = ได้ของสดแน่นอน)
+const MC = {};
+let LOAD_SEQ = 0;   // กันคำตอบเก่าที่มาช้าทับเดือนที่ผู้ใช้กดไปล่าสุด
+async function load(fresh) {
   if (!KEY) { $('keyMask').classList.add('on'); return; }
   if (!D) loaderStart();   // เปิดแอปครั้งแรกยังไม่มีอะไรบนจอ → โชว์หน้าโหลด (เปลี่ยนเดือน/รีเฟรชไม่ต้อง)
+  const seq = ++LOAD_SEQ, want = MONTH;
+  // เดือนที่เคยโหลดแล้ว → โชว์ก่อนทันที แล้วค่อยอัปเดตเงียบ ๆ ตามหลัง
+  if (!fresh && want && MC[want]) { D = MC[want]; render(); }
   try {
     const prm = { action: 'exec' };
-    if (MONTH) prm.month = MONTH;
+    if (want) prm.month = want;
+    if (fresh) prm.fresh = '1';
     const j = await api(prm, 2);
     if (!j.ok) throw new Error(j.error === 'unauthorized' ? 'รหัสไม่ถูกต้อง' : (j.error || 'โหลดไม่สำเร็จ'));
+    MC[j.monthKey] = j;
+    if (seq !== LOAD_SEQ) return;   // ผู้ใช้กดไปเดือนอื่นแล้ว — ไม่เอาคำตอบนี้มาทับ
     D = j;
     MONTH = j.monthKey || MONTH;
     LOADED_AT = new Date();
@@ -569,13 +579,26 @@ async function load() {
     localStorage.setItem('EX_CACHE', JSON.stringify({ t: Date.now(), d: j }));
     render();
     loaderDone();
+    prefetchPrev();
   } catch (e) {
+    if (seq !== LOAD_SEQ) return;
     loaderDone();
     if (String(e.message).indexOf('รหัส') !== -1) { localStorage.removeItem('EX_KEY'); KEY = ''; $('keyMask').classList.add('on'); return; }
     // ออฟไลน์ → ใช้ของแคชไปก่อน ไม่ให้จอว่างเปล่า
     try { const c = JSON.parse(localStorage.getItem('EX_CACHE') || 'null'); if (c) { D = c.d; MONTH = c.d.monthKey || MONTH; LOADED_AT = new Date(c.t); render(); toast('ออฟไลน์ — แสดงข้อมูลล่าสุดที่โหลดไว้'); return; } } catch (x) {}
     $('app').innerHTML = '<div class="empty">⚠️ ' + esc(e.message) + '</div>';
   }
+}
+
+// โหลดเดือนก่อนหน้ารอไว้เงียบ ๆ หลังหน้าหลักขึ้นแล้ว — กด ◀ ครั้งแรกจะได้ไม่ต้องรอ
+function prefetchPrev() {
+  try {
+    const [y, m] = (MONTH || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    const pk = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    if (MC[pk]) return;
+    api({ action: 'exec', month: pk }, 0).then(j => { if (j && j.ok) MC[j.monthKey] = j; }).catch(() => {});
+  } catch (e) {}
 }
 
 function render() {
@@ -697,7 +720,7 @@ function monthShift(n) {
   const [y, m] = (MONTH || new Date().toISOString().slice(0, 7)).split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
   MONTH = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  toast('กำลังโหลด ' + thMonth(MONTH) + '...');
+  if (!MC[MONTH]) toast('กำลังโหลด ' + thMonth(MONTH) + '...');
   load();
 }
 function bindPhase1() {
@@ -1910,7 +1933,7 @@ $('keySave').onclick = () => {
   const k = $('keyInput').value.trim(); if (!k) return;
   KEY = k; localStorage.setItem('EX_KEY', k); $('keyMask').classList.remove('on'); load();
 };
-$('btnRf').onclick = () => load();
+$('btnRf').onclick = () => { toast('กำลังดึงข้อมูลสด...'); load(true); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && KEY) load(); });
 if (KEY) localStorage.setItem('EX_KEY', KEY);
 load();
