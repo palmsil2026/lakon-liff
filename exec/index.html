@@ -646,6 +646,7 @@ function render() {
   if (live()) {
     h += `<div class="sec"><h2>🧑‍💼 ยอดขายรายเซลส์</h2><div class="hint">เดือน ${esc(D.month)} — ใครขายเท่าไหร่ กี่เปอร์เซ็นต์ · แตะชื่อเพื่อดูรายงานผลงานคนนั้น</div>${sellersHtml(A.bySeller)}</div>`;
     h += peopleHtml();
+    h += bookingsHtml();
 
     // ── 💳 เงินค้างเก็บ + 🏆 ลูกค้า ──
     h += '<div class="grid2">';
@@ -713,6 +714,7 @@ function bindPhase1() {
   };
   document.querySelectorAll('[data-dseller]').forEach(el => el.onclick = () => openPerson(el.dataset.dseller));
   document.querySelectorAll('[data-dperson]').forEach(el => el.onclick = () => openPerson(el.dataset.dperson));
+  document.querySelectorAll('[data-dbook]').forEach(el => el.onclick = () => bookingDrill(el.dataset.dbook));
   document.querySelectorAll('[data-oboard]').forEach(el => el.onclick = () => window.open(D.boardLink || '../board/', '_blank'));
   document.querySelectorAll('[data-dprodcard]').forEach(el => el.onclick = e => { e.stopPropagation(); prodDrill(); });
   document.querySelectorAll('[data-bucket]').forEach(el => el.onclick = () => {
@@ -910,6 +912,56 @@ function personDrill(nm) {
     $('dtMask').classList.remove('on');
     if (s) openStaff(s.id || s.name);
   };
+}
+
+// ════════════════════════════════════════════════════════════
+//  📦 ใบสั่งจอง — ลูกค้าสั่งก้อนใหญ่ทิ้งไว้ แล้วทยอยส่งเป็นงวด (เคสวรินธร 2,000 โหล ส่งครั้งละ 500)
+//  ยอดขาย/เงินนับตามงวดที่ส่งจริง (กติกาคุณปาล์ม 1ก 2ก) — การ์ดนี้ตอบว่า "ใครสั่งไว้เท่าไหร่ ส่งไปแล้วเท่าไหร่ เหลืออีกเท่าไหร่"
+//  ไม่มีชีต StandingOrders (ระบบขายยังไม่ปล่อย) = ไม่ขึ้นการ์ดเลย ไม่รก
+// ════════════════════════════════════════════════════════════
+const BKS = () => (D && D.bookings && D.bookings.list) || [];
+function bookingsHtml() {
+  const ls = BKS();
+  if (!ls.length) return '';
+  const B = D.bookings;
+  const open = ls.filter(b => b.st !== 'ส่งครบ'), done = ls.filter(b => b.st === 'ส่งครบ');
+  let h = `<div class="sec"><h2>📦 ใบสั่งจอง — ทยอยส่ง${open.length ? ` <span class="pill p-gold">ค้างส่ง ${open.length} ใบ · ${money(B.openQty)} ลัง</span>` : ''}</h2>
+    <div class="hint">ลูกค้าสั่งก้อนใหญ่ทิ้งไว้ แล้วเราทยอยส่ง — ยอดขายและเงินนับตามงวดที่ส่งจริง ไม่ใช่ตอนสั่ง · แตะเพื่อดูรายงวด
+      ${B.openValue ? `<br>มูลค่าที่ยังต้องส่งอีก <b>${money(B.openValue)}</b> บาท (ตามราคาที่ล็อกไว้)` : ''}</div>`;
+  const row = b => `<div class="prow" data-dbook="${esc(b.id)}">
+      <div class="av" style="background:${b.st === 'ส่งครบ' ? 'rgba(46,156,94,.15)' : 'rgba(200,145,46,.15)'};color:${b.st === 'ส่งครบ' ? 'var(--green)' : 'var(--gold)'}">${b.pct}%</div>
+      <div class="mid">
+        <div class="nm">${esc(b.cust || '(ไม่ระบุลูกค้า)')}${b.seller ? `<span class="pill p-gray">${esc(b.seller)}</span>` : ''}${b.diff ? '<span class="pill p-red">ตัวเลขในชีตไม่ตรง</span>' : ''}</div>
+        <div class="sub">${esc(b.prod || '—')} · จอง ${money(b.qty)} ${esc(b.unit)} @ ${money(b.price)} บาท${b.last ? ' · ส่งล่าสุด ' + esc(thDate(b.last)) : ' · ยังไม่เคยส่ง'}</div>
+        <div class="track" style="height:7px;margin-top:6px;background:var(--raise);border-radius:99px;overflow:hidden"><div style="height:100%;width:${b.pct}%;background:${b.st === 'ส่งครบ' ? 'var(--green)' : 'var(--gold)'};border-radius:99px"></div></div>
+      </div>
+      <div class="rt"><b>${money(b.left)}</b><span>${b.st === 'ส่งครบ' ? 'ส่งครบแล้ว' : 'เหลือส่ง (' + esc(b.unit) + ')'}</span></div>
+    </div>`;
+  h += open.map(row).join('');
+  if (done.length) h += `<div class="hint" style="margin:10px 0 6px">✅ ส่งครบแล้ว ${done.length} ใบ</div>` + done.slice(0, 5).map(row).join('');
+  return h + '</div>';
+}
+function bookingDrill(id) {
+  const b = BKS().find(x => x.id === id); if (!b) return;
+  const st = (lb, v, sub) => `<div class="pstat"><div class="lb">${lb}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  let h = `<div class="hint">${esc(b.prod || '—')} · สั่งเมื่อ ${b.date ? esc(thDate(b.date)) : '—'}${b.due ? ' · กำหนดส่งครบ ' + esc(thDate(b.due)) : ''}${b.seller ? ' · เซลส์ ' + esc(b.seller) : ''} · ใบจอง ${esc(b.id)}</div>`;
+  if (b.diff) h += `<div class="pill p-red" style="margin:6px 0">⚠️ คอลัมน์ "ส่งแล้ว" ในชีตต่างจากออเดอร์จริง ${b.diff > 0 ? '+' : ''}${money(b.diff)} ${esc(b.unit)} — ตัวเลขด้านล่างคิดจากออเดอร์จริง ให้ทีมขายเช็คชีต</div>`;
+  h += '<div class="pstats">'
+    + st('สั่งจองไว้', money(b.qty) + ' ' + esc(b.unit), 'ราคาล็อก ' + money(b.price) + ' บาท/' + esc(b.unit) + ' · มูลค่า ' + money(b.value) + ' บาท')
+    + st('ส่งแล้ว', money(b.shipped) + ' ' + esc(b.unit), b.lots.length + ' งวด · ยอดขายที่นับแล้ว ' + money(b.amt) + ' บาท')
+    + st('เหลือส่ง', money(b.left) + ' ' + esc(b.unit), b.left ? 'มูลค่า ' + money(Math.round(b.left * b.price)) + ' บาท' : 'ส่งครบแล้ว')
+    + '</div>';
+  h += '<div class="psec"><h4>🚚 งวดที่ส่งแล้ว</h4>';
+  h += b.lots.length ? '<div class="scroll"><table class="tb"><tr><th>งวด</th><th>วันที่</th><th>ออเดอร์</th><th class="num">' + esc(b.unit) + '</th><th class="num">ยอด (บาท)</th><th>สถานะ</th></tr>'
+    + b.lots.map((l, i) => `<tr><td>${i + 1}</td><td style="white-space:nowrap">${esc(thDate(l.d))}</td><td style="font-size:.72rem;color:var(--sub)">${esc(l.oid || '—')}</td>
+        <td class="num"><b>${money(l.qty)}</b></td><td class="num">${money(l.amt)}</td><td><span class="pill ${stPill(l.st + ' ' + l.dst)}">${esc(l.dst || l.st || '—')}</span></td></tr>`).join('')
+    + `<tr><td colspan="3"><b>รวม</b></td><td class="num"><b>${money(b.shipped)}</b></td><td class="num"><b>${money(b.amt)}</b></td><td></td></tr></table></div>`
+    : '<div class="empty">ยังไม่มีงวดส่งจากใบจองนี้</div>';
+  h += '</div>';
+  if (b.note) h += `<div class="hint" style="margin-top:10px">📝 ${esc(b.note)}</div>`;
+  $('dtTitle').textContent = '📦 ' + (b.cust || 'ใบสั่งจอง') + ' — ' + (b.st === 'ส่งครบ' ? 'ส่งครบแล้ว' : 'เหลือส่ง ' + money(b.left) + ' ' + b.unit);
+  $('dtBody').innerHTML = h;
+  $('dtMask').classList.add('on');
 }
 
 // ── 💵 หน้าการเงิน: เงินเข้าแยกก้อนตามที่บันทึกจริง + รายจ่ายแยกหมวด + สรุปสุทธิ ──
@@ -1362,7 +1414,7 @@ function openOrders(title, os, showDate, bucket) {
   let h = `<div class="hint" style="margin-bottom:8px">รวม <b>${money(tot)}</b> บาท · ${money(totQ)} ลัง · ${os.length} รายการ${ONLY_DONE ? ' (เฉพาะส่งแล้ว)' : ''}</div>`;
   h += os.length ? '<div class="scroll"><table class="tb"><tr>' + (showDate ? '<th>วันที่</th>' : '') + '<th>ลูกค้า</th><th>สินค้า</th><th class="num">ลัง</th><th class="num">' + (bucket ? 'ยอดในก้อนนี้' : 'ยอด') + '</th><th>สถานะ</th></tr>' +
     os.map(o => `<tr>${showDate ? '<td style="white-space:nowrap">' + esc(o.d.slice(8) + '/' + o.d.slice(5, 7)) + '</td>' : ''}
-      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + (o.s0 ? ' (คีย์โดย ' + esc(o.s0) + ')' : '') + '</span>' : ''}</td>
+      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + (o.s0 ? ' (คีย์โดย ' + esc(o.s0) + ')' : '') + '</span>' : ''}${o.bk ? ' <span class="pill p-gold" style="font-size:9.5px">📦 งวดจากใบจอง</span>' : ''}</td>
       <td class="num">${money(o.qty)}</td><td class="num"><b>${money(val(o))}</b>${bucket && val(o) !== o.amt ? '<div style="font-size:.66rem;color:var(--faint)">ทั้งบิล ' + money(o.amt) + '</div>' : ''}</td>
       <td><span class="pill ${stPill(o.st)}">${esc(o.st || '—')}</span>${/unpaid|ค้าง/i.test(o.pay) ? ' <span class="pill p-red">ยังไม่จ่าย</span>' : ''}${o.ptype ? '<div style="font-size:.66rem;color:var(--faint);margin-top:2px">' + esc(o.ptype) + '</div>' : ''}</td></tr>`).join('') +
     '</table></div>' : '<div class="empty">ไม่มีออเดอร์</div>';
