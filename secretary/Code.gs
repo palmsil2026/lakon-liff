@@ -1842,7 +1842,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-08-31a';
+const CODE_VERSION = '2026-09-03a';
 
 function healthCheck() {
   const L = [];
@@ -2774,6 +2774,75 @@ function plantPayments() {
   } catch (e) { console.error('plantPayments: ' + e); return null; }
 }
 
+// 📦 ใบสั่งจอง (ชีต StandingOrders — ข้อตกลงกับระบบขาย 2026-09-03): ลูกค้าสั่งก้อนใหญ่ทิ้งไว้ แล้วทยอยส่งเป็นงวด
+// งวดส่ง = ออเดอร์ปกติในแท็บออเดอร์ที่มีคอลัมน์ "อ้างอิงใบจอง" = Booking_ID → ยอดขาย/เงินนับตามงวด (คุณปาล์มเคาะ 1ก 2ก)
+// ใบจองไม่ตัดสต๊อก ไม่นับยอดขาย — palm-hq อ่านอย่างเดียว · คืน null ถ้ายังไม่มีชีต (ระบบขายยังไม่ปล่อยฟีเจอร์)
+function plantBookings() {
+  const ss = plantSS(); if (!ss) return null;
+  try {
+    const sh = ss.getSheetByName('StandingOrders'); if (!sh || sh.getLastRow() < 1) return null;
+    const vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+    const head = vals[0].map(function (h) { return String(h).trim(); });
+    const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
+    const iId = find(/booking_?id|เลขที่ใบจอง/i), iDate = find(/^วันที่สั่ง|^วันที่$|^date/i);
+    const iCust = find(/^ชื่อลูกค้า|^ลูกค้า/), iCid = find(/customer_?id/i);
+    const iProd = find(/^สินค้า/), iPid = find(/product_?id/i);
+    const iQty = find(/^จำนวนจอง|^จำนวน$|^qty/i), iUnit = find(/^หน่วย/), iPrice = find(/^ราคา/);
+    const iShip = find(/^ส่งแล้ว/), iLeft = find(/^คงเหลือ/), iSt = find(/^สถานะ/);
+    const iSeller = find(/^เซลส์|^ผู้ขาย/), iNote = find(/^หมายเหตุ/), iDue = find(/^กำหนดส่งครบ|^กำหนด/);
+    if (iId < 0 || iQty < 0) return null;
+    const out = [];
+    vals.slice(1).forEach(function (r) {
+      const id = String(r[iId] || '').trim(); if (!id) return;
+      out.push({
+        id: id, date: iDate >= 0 ? execDateKey(r[iDate]) : '',
+        cust: iCust >= 0 ? String(r[iCust] || '').trim() : '', cid: iCid >= 0 ? String(r[iCid] || '').trim() : '',
+        prod: iProd >= 0 ? String(r[iProd] || '').trim() : '', pid: iPid >= 0 ? String(r[iPid] || '').trim() : '',
+        qty: execNum(r[iQty]), unit: iUnit >= 0 ? String(r[iUnit] || '') : '', price: iPrice >= 0 ? execNum(r[iPrice]) : 0,
+        shippedCol: iShip >= 0 ? execNum(r[iShip]) : null, leftCol: iLeft >= 0 ? execNum(r[iLeft]) : null,
+        st: iSt >= 0 ? String(r[iSt] || '').trim() : '', seller: iSeller >= 0 ? String(r[iSeller] || '').trim() : '',
+        note: iNote >= 0 ? String(r[iNote] || '') : '', due: iDue >= 0 ? execDateKey(r[iDue]) : '',
+      });
+    });
+    return out;
+  } catch (e) { console.error('plantBookings: ' + e); return null; }
+}
+
+// รวมใบจอง + งวดที่ส่งแล้ว (ออเดอร์ที่ bk = Booking_ID) — คิดจากข้อมูลล้วน ไม่แตะชีต (มีเทส bookings_test.js)
+// ส่งแล้ว/คงเหลือ คิดใหม่จากออเดอร์จริง (ledger คือความจริง) แล้วเทียบกับคอลัมน์ในใบจอง ถ้าไม่ตรงติดธง diff ให้เห็น
+function execBookings(bookings, sales, fixName) {
+  if (!bookings) return null;
+  const byBk = {};
+  (sales || []).forEach(function (s) {
+    if (!s.bk) return;
+    const b = byBk[s.bk] = byBk[s.bk] || { qty: 0, amt: 0, ords: {}, last: '' };
+    b.qty += s.qty; b.amt += s.amount;
+    const o = b.ords[s.oid || (s.date + '|' + s.prod)] = b.ords[s.oid || (s.date + '|' + s.prod)] || { oid: s.oid || '', d: s.date, qty: 0, amt: 0, st: s.st || '', dst: s.dst || '' };
+    o.qty += s.qty; o.amt += s.amount;
+    if (s.date > b.last) b.last = s.date;
+  });
+  const list = bookings.filter(function (b) { return !/ยกเลิก|cancel/i.test(b.st); }).map(function (b) {
+    const got = byBk[b.id] || { qty: 0, amt: 0, ords: {}, last: '' };
+    let seller = fixName ? fixName(b.seller) : b.seller;
+    if (b.cust && EXEC_MY_CUST.test(b.cust)) seller = 'คุณปาล์ม';   // กติกาลูกค้าส่วนตัว ใช้กับใบจองด้วย
+    const shipped = got.qty, left = Math.max(0, b.qty - shipped);
+    return {
+      id: b.id, date: b.date, cust: b.cust, prod: b.prod, qty: b.qty, unit: b.unit || 'ลัง', price: b.price,
+      shipped: shipped, left: left, amt: got.amt, value: Math.round(b.qty * b.price),
+      pct: b.qty ? Math.min(100, Math.round(shipped / b.qty * 100)) : 0,
+      st: left <= 0 && b.qty ? 'ส่งครบ' : (b.st || 'เปิด'),
+      // คอลัมน์ "ส่งแล้ว" ในชีตไม่ตรงกับออเดอร์จริง = มีคนแก้มือ/ระบบขายเขียนพลาด — โชว์ให้ตรวจ ไม่เดา
+      diff: (b.shippedCol != null && b.shippedCol !== shipped) ? b.shippedCol - shipped : 0,
+      seller: seller, note: b.note, due: b.due, last: got.last,
+      lots: Object.keys(got.ords).map(function (k) { return got.ords[k]; }).sort(function (a, c) { return a.d < c.d ? -1 : 1; }),
+    };
+  }).sort(function (a, b) { return (a.st === 'ส่งครบ') - (b.st === 'ส่งครบ') || (b.left - a.left); });
+  const open = list.filter(function (b) { return b.st !== 'ส่งครบ'; });
+  return { list: list, open: open.length,
+           openQty: open.reduce(function (s, b) { return s + b.left; }, 0),
+           openValue: open.reduce(function (s, b) { return s + Math.round(b.left * b.price); }, 0) };
+}
+
 // จัดสายผลิตภัณฑ์จากชื่อสินค้า/แบรนด์ — ยึดตามที่ CEO แบ่งไว้ 3 ขา
 function lineOfProduct(name, orderType) {
   const s = String(name || '');
@@ -2810,6 +2879,7 @@ function plantFeed(monthPrefix) {
     // คอลัมน์ Orders & Orders_LINE: A=Order_ID B=Date C=Customer D=Product_ID E=Qty F=UnitPrice ... I=TotalPrice ... M=หมวด
     // A=Order_ID B=Date D=Product_ID(3) E=Qty(4) F=Unit_Price(5) H=Status(7) I=TotalPrice(8) M=หมวด(12)
     ['Orders', 'Orders_LINE'].forEach(function (tab) {
+      const tBk = plantColIdx(tab, /อ้างอิงใบจอง|booking/i);   // งวดส่งจากใบสั่งจอง (ข้อตกลง 2026-09-03)
       plantRows(tab, 4000).forEach(function (r) {
         const dk = execDateKey(r[1]); if (!dk) return;
         if (/ยกเลิก|cancel/i.test(String(r[7] || ''))) return;
@@ -2822,6 +2892,7 @@ function plantFeed(monthPrefix) {
         out.sales.push({ date: dk, oid: String(r[0] || ''), line: lineOfProduct(prodName[pid] || pid, cat), qty: qty, amount: amt,
                          prod: prodName[pid] || pid, cust: custName[cid] || cid,
                          seller: String(r[6] || ''), st: String(r[7] || ''), pay: String(r[9] || ''), ptype: String(r[10] || ''),
+                         bk: tBk >= 0 ? String(r[tBk] || '').trim() : '',
                          // ค้างเก็บ = ส่งของแล้วแต่สถานะจ่ายยัง Unpaid
                          ar: /unpaid/i.test(String(r[9] || '')) && /ส่งแล้ว/.test(String(r[7] || '')) });
       });
@@ -2832,6 +2903,7 @@ function plantFeed(monthPrefix) {
     const sRecv = plantColIdx('Orders_Sales', /ยอดรับ|รับชำระ|รับแล้ว|ชำระแล้ว/);
     const sDby = plantColIdx('Orders_Sales', /^ผู้ส่ง$/);
     const sDby2 = plantColIdx('Orders_Sales', /^ส่งโดย$/);
+    const sBk = plantColIdx('Orders_Sales', /อ้างอิงใบจอง|booking/i);
     plantRows('Orders_Sales', 4000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[14] || ''))) return;
@@ -2843,6 +2915,7 @@ function plantFeed(monthPrefix) {
                        seller: String(r[4] || ''), st: String(r[14] || ''), pay: String(r[13] || ''), ptype: String(r[13] || ''),
                        dst: sDst >= 0 ? String(r[sDst] || '') : '',
                        dby: String((sDby >= 0 && r[sDby]) || (sDby2 >= 0 && r[sDby2]) || '').trim(),
+                       bk: sBk >= 0 ? String(r[sBk] || '').trim() : '',
                        colRecv: sRecv >= 0 ? execNum(r[sRecv]) : null,
                        // ค้างเก็บ = ขายเครดิต/วางบิล + ส่งแล้ว แต่ยังไม่บันทึกเก็บเงิน
                        ar: /เครดิต|วางบิล/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[14] || '')) && !/เก็บเงิน/.test(String(r[14] || '')) });
@@ -2851,6 +2924,7 @@ function plantFeed(monthPrefix) {
     const oDst = plantColIdx('Orders_OEM', /สถานะส่ง/);
     const oRecv = plantColIdx('Orders_OEM', /ยอดรับ|รับชำระ|รับแล้ว|ชำระแล้ว/);
     const oDby = plantColIdx('Orders_OEM', /^ผู้ส่ง$/);
+    const oBk = plantColIdx('Orders_OEM', /อ้างอิงใบจอง|booking/i);
     plantRows('Orders_OEM', 2000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[15] || ''))) return;
@@ -2860,6 +2934,7 @@ function plantFeed(monthPrefix) {
                        seller: String(r[4] || ''), st: String(r[15] || ''), pay: String(r[13] || ''), ptype: String(r[13] || ''),
                        dst: oDst >= 0 ? String(r[oDst] || '') : '',
                        dby: String((oDby >= 0 && r[oDby]) || '').trim(),
+                       bk: oBk >= 0 ? String(r[oBk] || '').trim() : '',
                        colRecv: oRecv >= 0 ? execNum(r[oRecv]) : null,
                        ar: /เครดิต/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[15] || '')) });
     });
@@ -3252,6 +3327,7 @@ function execDashboard(key, month) {
           const o = { d: s.date, line: s.line, prod: s.prod || '', cust: s.cust || '', seller: s.seller || '',
                       qty: s.qty, amt: s.amount, st: s.st || '', pay: s.pay || '', ptype: s.ptype || '', dst: s.dst || '' };
           if (s.seller0) o.s0 = s.seller0;   // ออเดอร์ที่ถูกยกให้คุณปาล์มตามกติกาลูกค้าส่วนตัว — เก็บชื่อคนคีย์จริงไว้ดู
+          if (s.bk) o.bk = s.bk;             // งวดส่งจากใบสั่งจอง
           if (s.recv != null) { o.recv = s.recv; o.rcash = s.rcash || 0; o.rhand = s.rhand || 0; o.rtrans = s.rtrans || 0; if (s.paidAt) o.paidAt = s.paidAt; }
           return o;
         });
@@ -3362,6 +3438,13 @@ function execDashboard(key, month) {
       } catch (e) { console.error('execPeople: ' + e); }
     }
 
+    // 📦 ใบสั่งจองที่ทยอยส่ง — ส่งแล้ว/คงเหลือคิดจากออเดอร์ที่อ้างอิงใบจอง (null = ระบบขายยังไม่มีชีตนี้)
+    let bookings = null;
+    if (liveSource) {
+      try { bookings = execBookings(plantBookings(), feed.sales, plantPersonFixer(feed.reg)); }
+      catch (e) { console.error('execBookings: ' + e); }
+    }
+
     // เจาะการผลิต: รายการบันทึกของเดือนที่ดู + วันบันทึกล่าสุด (ไว้เตือนถ้าหน้างานเงียบนาน)
     let prodLogs = [], lastProd = '';
     if (liveSource && feed.prod.length) {
@@ -3373,7 +3456,7 @@ function execDashboard(key, month) {
 
     return {
       viewer: vw.name,
-      prev: prev, ar: ar, lost: lost, people: people,
+      prev: prev, ar: ar, lost: lost, people: people, bookings: bookings,
       prodLogs: prodLogs, lastProd: lastProd,
       expenses: expenses, payroll: payroll,
       hasPay: !!(feed && feed.hasPay),   // true = อ่านเงินรับจริงจากสมุดรับเงิน v14 | false = ประเมินจากสถานะออเดอร์
