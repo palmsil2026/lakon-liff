@@ -1846,7 +1846,7 @@ function attachMediaToLatestTask(senderId, url, desc) {
 //  🩺 "เลขา เช็คระบบ" — ไล่ตรวจว่าอะไรพร้อม อะไรยังขาด พร้อมวิธีแก้
 // ════════════════════════════════════════════════════════════
 // เวอร์ชันโค้ดที่รันอยู่ — อัปเดตทุกครั้งที่แก้ไฟล์นี้แล้ววาง GAS (ดูใน "เช็คระบบ" ได้เลยว่า GAS ทันกับ repo ไหม)
-const CODE_VERSION = '2026-09-03b';
+const CODE_VERSION = '2026-09-04a';
 
 function healthCheck() {
   const L = [];
@@ -2831,6 +2831,56 @@ function plantBookings() {
   } catch (e) { console.error('plantBookings: ' + e); return null; }
 }
 
+// 📣 โปรเจกต์การตลาด (ชีต MarketingProjects — ข้อตกลง 2026-09-04): ออเดอร์ที่ติดป้ายโปรเจกต์ = ของแลกดีล
+// ไม่นับยอดขาย ไม่จ่ายค่าคอม ตีมูลค่าตามราคาขายปกติ (คุณปาล์มเคาะ 1ก 2ก) · คืน null ถ้ายังไม่มีชีต
+function plantMarketing() {
+  const vals = plantVals('MarketingProjects'); if (!vals || !vals.length) return null;
+  const head = vals[0].map(function (h) { return String(h).trim(); });
+  const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
+  const iId = find(/project_?id|รหัส/i), iName = find(/^ชื่อโปรเจกต์|^ชื่อ|^โปรเจกต์/), iType = find(/ประเภท/);
+  const iPartner = find(/คู่ค้า|พาร์ทเนอร์|partner/i), iGot = find(/ได้กลับ|ได้รับ|แลก/), iBudget = find(/^งบ/);
+  const iFrom = find(/^เริ่ม/), iTo = find(/^สิ้นสุด|^จบ/), iSt = find(/^สถานะ/), iOwner = find(/ผู้ดูแล|owner/i), iNote = find(/หมายเหตุ/);
+  if (iId < 0) return null;
+  const out = [];
+  vals.slice(1).forEach(function (r) {
+    const id = String(r[iId] || '').trim(); if (!id) return;
+    out.push({ id: id, name: iName >= 0 ? String(r[iName] || '').trim() : id, type: iType >= 0 ? String(r[iType] || '') : '',
+               partner: iPartner >= 0 ? String(r[iPartner] || '') : '', got: iGot >= 0 ? String(r[iGot] || '') : '',
+               budget: iBudget >= 0 ? execNum(r[iBudget]) : 0, from: iFrom >= 0 ? execDateKey(r[iFrom]) : '', to: iTo >= 0 ? execDateKey(r[iTo]) : '',
+               st: iSt >= 0 ? String(r[iSt] || '').trim() : '', owner: iOwner >= 0 ? String(r[iOwner] || '') : '', note: iNote >= 0 ? String(r[iNote] || '') : '' });
+  });
+  return out;
+}
+// รวมโปรเจกต์ + ออเดอร์ที่ติดป้าย (s.mk) — เดือนที่ดู + สะสม · ออเดอร์ที่ติดป้ายรหัสที่ไม่มีในทะเบียนไม่ทิ้ง โชว์เป็น "ไม่พบในทะเบียน"
+function execMarketing(projects, sales, monthPrefix) {
+  const tagged = (sales || []).filter(function (s) { return s.mk; });
+  if (!projects && !tagged.length) return null;
+  const P = {};
+  (projects || []).forEach(function (p) { P[p.id] = Object.assign({ mQty: 0, mValue: 0, tQty: 0, tValue: 0, ords: {} }, p); });
+  tagged.forEach(function (s) {
+    const p = P[s.mk] = P[s.mk] || { id: s.mk, name: s.mk + ' (ไม่พบในทะเบียน)', type: '', partner: '', got: '', budget: 0, from: '', to: '', st: 'เปิด', owner: '', note: '', mQty: 0, mValue: 0, tQty: 0, tValue: 0, ords: {}, unknown: true };
+    const v = s.mkv || s.amount || 0;
+    p.tQty += s.qty; p.tValue += v;
+    if (String(s.date || '').indexOf(monthPrefix) === 0) { p.mQty += s.qty; p.mValue += v; }
+    const k = s.oid || (s.date + '|' + s.prod);
+    const o = p.ords[k] = p.ords[k] || { oid: s.oid || '', d: s.date, cust: s.cust || '', qty: 0, value: 0, st: s.st || '', dst: s.dst || '', seller: s.seller || '' };
+    o.qty += s.qty; o.value += v;
+  });
+  const list = Object.keys(P).map(function (k) {
+    const p = P[k];
+    return { id: p.id, name: p.name, type: p.type, partner: p.partner, got: p.got, budget: p.budget, from: p.from, to: p.to,
+             st: p.st || 'เปิด', owner: p.owner, note: p.note, unknown: !!p.unknown,
+             mQty: Math.round(p.mQty), mValue: Math.round(p.mValue), tQty: Math.round(p.tQty), tValue: Math.round(p.tValue),
+             pct: p.budget ? Math.min(100, Math.round(p.tQty / p.budget * 100)) : 0,
+             ords: Object.keys(p.ords).map(function (x) { return p.ords[x]; }).sort(function (a, b) { return a.d < b.d ? 1 : -1; }).slice(0, 40) };
+  }).filter(function (p) { return !/ยกเลิก|cancel/i.test(p.st); })
+    .sort(function (a, b) { return (b.mQty - a.mQty) || (b.tQty - a.tQty); });
+  return { list: list,
+           mQty: list.reduce(function (t, p) { return t + p.mQty; }, 0), mValue: list.reduce(function (t, p) { return t + p.mValue; }, 0),
+           // ระวัง: "เปิด" มีคำว่า "ปิด" อยู่ข้างใน — ต้องยึดหัวคำ (^ปิด) ไม่งั้นทุกโปรเจกต์กลายเป็นปิดหมด
+           open: list.filter(function (p) { return !/^ปิด|closed|done/i.test(p.st); }).length };
+}
+
 // รวมใบจอง + งวดที่ส่งแล้ว (ออเดอร์ที่ bk = Booking_ID) — คิดจากข้อมูลล้วน ไม่แตะชีต (มีเทส bookings_test.js)
 // ส่งแล้ว/คงเหลือ คิดใหม่จากออเดอร์จริง (ledger คือความจริง) แล้วเทียบกับคอลัมน์ในใบจอง ถ้าไม่ตรงติดธง diff ให้เห็น
 function execBookings(bookings, sales, fixName) {
@@ -2882,11 +2932,13 @@ function plantFeed(monthPrefix) {
   const out = { sales: [], prod: [], staff: [], reg: [], source: 'ระบบขาย-โรงงาน (สด)' };
   try {
     // ── ชื่อสินค้า → ใช้จัดสายผลิตภัณฑ์ ──
-    const prodName = {};
+    const prodName = {}, prodPrice = {};   // Products: H=Price(7) G=ราคาปลีก(6) — ราคาขายปกติ ไว้ตีมูลค่าของโปรเจกต์การตลาด
     plantRows('Products').forEach(function (r) {
       const id = String(r[0] || '').trim(); if (!id) return;
       prodName[id] = String(r[11] || '').trim() || (String(r[1] || '') + ' ' + String(r[2] || '')).trim();
+      prodPrice[id] = execNum(r[7]) || execNum(r[6]) || 0;
     });
+    out.prodPrice = prodPrice;
     // ── ชื่อลูกค้าจากรหัส (แท็บโรงงาน/LINE เก็บแต่ Customer_ID) ──
     const custName = {};
     plantRows('Customers').forEach(function (r) {
@@ -2903,6 +2955,7 @@ function plantFeed(monthPrefix) {
     // A=Order_ID B=Date D=Product_ID(3) E=Qty(4) F=Unit_Price(5) H=Status(7) I=TotalPrice(8) M=หมวด(12)
     ['Orders', 'Orders_LINE'].forEach(function (tab) {
       const tBk = plantColIdx(tab, /อ้างอิงใบจอง|booking/i);   // งวดส่งจากใบสั่งจอง (ข้อตกลง 2026-09-03)
+      const tMk = plantColIdx(tab, /โปรเจกต์การตลาด|marketing/i); // ออเดอร์แลกดีลการตลาด — ไม่นับยอดขาย ไม่จ่ายคอม (2026-09-04)
       plantRows(tab, 4000).forEach(function (r) {
         const dk = execDateKey(r[1]); if (!dk) return;
         if (/ยกเลิก|cancel/i.test(String(r[7] || ''))) return;
@@ -2912,10 +2965,11 @@ function plantFeed(monthPrefix) {
         // แถวหมวด OEM ที่ยอดเงิน 0 = แถวเงา (เงินจริงบันทึกในแท็บ Orders_OEM) — ข้ามกันนับลังซ้ำ
         if (/OEM/.test(cat) && !amt) return;
         const pid = String(r[3] || ''), cid = String(r[2] || '');
-        out.sales.push({ date: dk, oid: String(r[0] || ''), line: lineOfProduct(prodName[pid] || pid, cat), qty: qty, amount: amt,
+        out.sales.push({ date: dk, oid: String(r[0] || ''), line: lineOfProduct(prodName[pid] || pid, cat), qty: qty, amount: amt, pid: pid,
                          prod: prodName[pid] || pid, cust: custName[cid] || cid,
                          seller: String(r[6] || ''), st: String(r[7] || ''), pay: String(r[9] || ''), ptype: String(r[10] || ''),
                          bk: tBk >= 0 ? String(r[tBk] || '').trim() : '',
+                         mk: tMk >= 0 ? String(r[tMk] || '').trim() : '',
                          // ค้างเก็บ = ส่งของแล้วแต่สถานะจ่ายยัง Unpaid
                          ar: /unpaid/i.test(String(r[9] || '')) && /ส่งแล้ว/.test(String(r[7] || '')) });
       });
@@ -2927,18 +2981,20 @@ function plantFeed(monthPrefix) {
     const sDby = plantColIdx('Orders_Sales', /^ผู้ส่ง$/);
     const sDby2 = plantColIdx('Orders_Sales', /^ส่งโดย$/);
     const sBk = plantColIdx('Orders_Sales', /อ้างอิงใบจอง|booking/i);
+    const sMk = plantColIdx('Orders_Sales', /โปรเจกต์การตลาด|marketing/i);
     plantRows('Orders_Sales', 4000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[14] || ''))) return;
       const pid = String(r[7] || ''), qty = execNum(r[9]);
       const amt = execNum(r[12]) || (qty * execNum(r[11]));
       const pname = String(r[8] || '') || prodName[pid] || pid;
-      out.sales.push({ date: dk, oid: String(r[0] || ''), line: lineOfProduct(pname, ''), qty: qty, amount: amt,
+      out.sales.push({ date: dk, oid: String(r[0] || ''), line: lineOfProduct(pname, ''), qty: qty, amount: amt, pid: pid,
                        prod: pname, cust: String(r[6] || ''),
                        seller: String(r[4] || ''), st: String(r[14] || ''), pay: String(r[13] || ''), ptype: String(r[13] || ''),
                        dst: sDst >= 0 ? String(r[sDst] || '') : '',
                        dby: String((sDby >= 0 && r[sDby]) || (sDby2 >= 0 && r[sDby2]) || '').trim(),
                        bk: sBk >= 0 ? String(r[sBk] || '').trim() : '',
+                       mk: sMk >= 0 ? String(r[sMk] || '').trim() : '',
                        colRecv: sRecv >= 0 ? execNum(r[sRecv]) : null,
                        // ค้างเก็บ = ขายเครดิต/วางบิล + ส่งแล้ว แต่ยังไม่บันทึกเก็บเงิน
                        ar: /เครดิต|วางบิล/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[14] || '')) && !/เก็บเงิน/.test(String(r[14] || '')) });
@@ -2948,6 +3004,7 @@ function plantFeed(monthPrefix) {
     const oRecv = plantColIdx('Orders_OEM', /ยอดรับ|รับชำระ|รับแล้ว|ชำระแล้ว/);
     const oDby = plantColIdx('Orders_OEM', /^ผู้ส่ง$/);
     const oBk = plantColIdx('Orders_OEM', /อ้างอิงใบจอง|booking/i);
+    const oMk = plantColIdx('Orders_OEM', /โปรเจกต์การตลาด|marketing/i);
     plantRows('Orders_OEM', 2000).forEach(function (r) {
       const dk = execDateKey(r[2]) || execDateKey(r[1]); if (!dk) return;
       if (/ยกเลิก|cancel/i.test(String(r[15] || ''))) return;
@@ -2958,6 +3015,7 @@ function plantFeed(monthPrefix) {
                        dst: oDst >= 0 ? String(r[oDst] || '') : '',
                        dby: String((oDby >= 0 && r[oDby]) || '').trim(),
                        bk: oBk >= 0 ? String(r[oBk] || '').trim() : '',
+                       mk: oMk >= 0 ? String(r[oMk] || '').trim() : '',
                        colRecv: oRecv >= 0 ? execNum(r[oRecv]) : null,
                        ar: /เครดิต/.test(String(r[13] || '')) && /ส่งแล้ว/.test(String(r[15] || '')) });
     });
@@ -3048,6 +3106,8 @@ function plantFeed(monthPrefix) {
         s.seller = 'คุณปาล์ม';
       } else s.seller = fixed;
       if (s.dby) s.dby = fixName(s.dby);
+      // ของโปรเจกต์การตลาด: ตีมูลค่าตามราคาขายปกติ (คุณปาล์มเคาะ 1ก) — ถ้าคีย์ราคาไว้ใช้ตามนั้น ถ้าคีย์ 0 ใช้ราคาในทะเบียนสินค้า
+      if (s.mk) s.mkv = s.amount || Math.round(s.qty * (prodPrice[s.pid] || 0));
     });
   } catch (e) { console.error('plantFeed: ' + e); }
   return out;
@@ -3125,14 +3185,14 @@ function execPeople(feed, act, monthPrefix, prevPrefix) {
   // วันแรกที่ลูกค้าแต่ละรายซื้อ (ไว้นับ "ลูกค้าใหม่") + ลูกค้าที่มีออเดอร์ในเดือนที่ดู (ไว้นับ "เข้าพบแล้วปิดได้")
   const custFirst = {}, monthCust = {};
   feed.sales.forEach(function (s) {
-    if (!s.cust) return;
+    if (!s.cust || s.mk) return;
     if (!custFirst[s.cust] || s.date < custFirst[s.cust]) custFirst[s.cust] = s.date;
     if (inM(s.date)) monthCust[s.cust] = 1;
   });
 
   // ── ยอดขายในฐานะเซลส์ ──
   feed.sales.forEach(function (s) {
-    if (!s.seller) return;
+    if (!s.seller || s.mk) return;   // ของโปรเจกต์การตลาด: ไม่ใช่ยอดขาย ไม่มีค่าคอม (งานส่งยังนับด้านล่าง)
     const A = at(s.seller).sale;
     const key = s.oid || (s.date + '|' + s.cust + '|' + s.prod);
     const B = inM(s.date) ? A.m : (inP(s.date) ? A.p : null);
@@ -3242,7 +3302,7 @@ function plantSalesSummaryText(which) {
     let amt = 0, qty = 0, n = 0;
     const byLine = {};
     feed.sales.forEach(function (s) {
-      if (s.date !== want) return;
+      if (s.date !== want || s.mk) return;   // ของโปรเจกต์การตลาดไม่ใช่ยอดขาย
       n++; amt += s.amount; qty += s.qty;
       if (!byLine[s.line]) byLine[s.line] = { amount: 0, qty: 0 };
       byLine[s.line].amount += s.amount; byLine[s.line].qty += s.qty;
@@ -3287,7 +3347,8 @@ function execDashboard(key, month) {
     let liveSource = '';
     if (feed && (feed.sales.length || feed.prod.length || feed.staff.length)) {
       liveSource = feed.source;
-      if (feed.sales.length) sales = feed.sales.map(function (s) {
+      // ออเดอร์โปรเจกต์การตลาด (s.mk) ไม่ใช่ยอดขาย — ตัดออกตั้งแต่ตรงนี้ KPI/กราฟ/สายผลิตภัณฑ์จะไม่เห็นเลย
+      if (feed.sales.length) sales = feed.sales.filter(function (s) { return !s.mk; }).map(function (s) {
         return { 'วันที่': s.date, 'สายผลิตภัณฑ์': s.line, 'จำนวน(ลัง)': s.qty, 'ยอดขาย(บาท)': s.amount };
       });
       if (feed.prod.length) prod = feed.prod.map(function (p) {
@@ -3351,6 +3412,7 @@ function execDashboard(key, month) {
                       qty: s.qty, amt: s.amount, st: s.st || '', pay: s.pay || '', ptype: s.ptype || '', dst: s.dst || '' };
           if (s.seller0) o.s0 = s.seller0;   // ออเดอร์ที่ถูกยกให้คุณปาล์มตามกติกาลูกค้าส่วนตัว — เก็บชื่อคนคีย์จริงไว้ดู
           if (s.bk) o.bk = s.bk;             // งวดส่งจากใบสั่งจอง
+          if (s.mk) { o.mk = s.mk; o.mkv = s.mkv || 0; }   // ของโปรเจกต์การตลาด — แอปตัดออกจากยอดขาย โชว์แยก
           if (s.recv != null) { o.recv = s.recv; o.rcash = s.rcash || 0; o.rhand = s.rhand || 0; o.rtrans = s.rtrans || 0; if (s.paidAt) o.paidAt = s.paidAt; }
           return o;
         });
@@ -3402,7 +3464,7 @@ function execDashboard(key, month) {
       const prevPrefix = pd.getFullYear() + '-' + ('0' + (pd.getMonth() + 1)).slice(-2);
       prev = { month: prevPrefix, all: { amt: 0, qty: 0 }, done: { amt: 0, qty: 0 } };
       feed.sales.forEach(function (s) {
-        if (s.date.indexOf(prevPrefix) !== 0) return;
+        if (s.mk || s.date.indexOf(prevPrefix) !== 0) return;
         prev.all.amt += s.amount; prev.all.qty += s.qty;
         if (/ส่งแล้ว|เก็บเงิน|delivered/i.test(s.st || '')) { prev.done.amt += s.amount; prev.done.qty += s.qty; }
       });
@@ -3414,7 +3476,7 @@ function execDashboard(key, month) {
     if (liveSource && feed.sales.length) {
       const m = {}; let tot = 0;
       feed.sales.forEach(function (s) {
-        if (!s.amount) return;
+        if (!s.amount || s.mk) return;   // ของโปรเจกต์ไม่มีหนี้ให้ตาม
         let due = 0;
         if (feed.hasPay && s.recv != null) {
           const delivered = /ส่งแล้ว|เก็บเงิน|delivered/i.test(String(s.st || '') + ' ' + String(s.dst || '')) || /^paid$/i.test(s.pay || '');
@@ -3439,7 +3501,7 @@ function execDashboard(key, month) {
     if (liveSource && feed.sales.length) {
       const cs = {};
       feed.sales.forEach(function (s) {
-        if (!s.cust) return;
+        if (!s.cust || s.mk) return;
         const t = cs[s.cust] = cs[s.cust] || { n: 0, amt: 0, last: '' };
         t.n++; t.amt += s.amount;
         if (s.date > t.last) t.last = s.date;
@@ -3462,6 +3524,12 @@ function execDashboard(key, month) {
     }
 
     // 📦 ใบสั่งจองที่ทยอยส่ง — ส่งแล้ว/คงเหลือคิดจากออเดอร์ที่อ้างอิงใบจอง (null = ระบบขายยังไม่มีชีตนี้)
+    // 📣 โปรเจกต์การตลาด — ของที่จ่ายเป็นการตลาด (ไม่ใช่ยอดขาย) เดือนนี้ + สะสม ต่อโปรเจกต์
+    let marketing = null;
+    if (liveSource) {
+      try { marketing = execMarketing(plantMarketing(), feed.sales, monthPrefix); }
+      catch (e) { console.error('execMarketing: ' + e); }
+    }
     let bookings = null;
     if (liveSource) {
       try { bookings = execBookings(plantBookings(), feed.sales, plantPersonFixer(feed.reg)); }
@@ -3479,7 +3547,7 @@ function execDashboard(key, month) {
 
     return {
       viewer: vw.name,
-      prev: prev, ar: ar, lost: lost, people: people, bookings: bookings,
+      prev: prev, ar: ar, lost: lost, people: people, bookings: bookings, marketing: marketing,
       prodLogs: prodLogs, lastProd: lastProd,
       expenses: expenses, payroll: payroll,
       hasPay: !!(feed && feed.hasPay),   // true = อ่านเงินรับจริงจากสมุดรับเงิน v14 | false = ประเมินจากสถานะออเดอร์
