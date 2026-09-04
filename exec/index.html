@@ -447,7 +447,10 @@ let LOADED_AT = null; // เวลาโหลดข้อมูลล่าส�
 // โหมดข้อมูลสด = เซิร์ฟเวอร์ส่งรายละเอียดออเดอร์รายแถวมาให้เจาะดูได้
 const live = () => !!(D && D.source && Array.isArray(D.orders));
 const isDone = o => /ส่งแล้ว|เก็บเงิน|delivered/i.test((o.st || '') + ' ' + (o.dst || ''));
-const FO = () => (D.orders || []).filter(o => !ONLY_DONE || isDone(o));
+// FO = ออเดอร์ขายจริง (ตัดของโปรเจกต์การตลาดออก — ไม่ใช่ยอดขาย ไม่มีค่าคอม) · FOA = ทั้งหมด (ใช้เฉพาะหน้าการเงิน: เงินที่เข้ามาจริงนับหมด)
+const FOA = () => (D.orders || []).filter(o => !ONLY_DONE || isDone(o));
+const FO = () => FOA().filter(o => !o.mk);
+const FOM = () => FOA().filter(o => o.mk);
 function aggr() {   // สรุปยอดฝั่งแอปจากออเดอร์รายแถว (เปลี่ยนสวิตช์ = คิดใหม่ทันที ไม่ต้องโหลด)
   const byLine = {}, bySeller = {}, byDay = {};
   let amt = 0, qty = 0;
@@ -477,6 +480,10 @@ const delivered = o => /ส่งแล้ว|เก็บเงิน|delivered
 // โหมดแม่นยำ: มีสมุดรับเงิน v14 (o.recv) · โหมดประเมิน: เดาจากสถานะ+วิธีจ่าย (ระบบเก่า)
 function splitMoney(o) {
   const s = { transfer: 0, cash: 0, hand: 0, credit: 0, wait: 0 };
+  if (o.mk) {   // ของโปรเจกต์การตลาด: ไม่มีหนี้ให้ตาม นับเฉพาะเงินที่รับมาจริง (ถ้าดีลไหนมีเงินเข้าบ้าง)
+    s.transfer = o.rtrans || 0; s.cash = o.rcash || 0; s.hand = o.rhand || 0;
+    return s;
+  }
   if (o.recv != null) {
     s.transfer = o.rtrans || 0; s.cash = o.rcash || 0; s.hand = o.rhand || 0;
     const rest = Math.max(0, o.amt - (o.recv || 0));
@@ -670,6 +677,7 @@ function render() {
     h += `<div class="sec"><h2>🧑‍💼 ยอดขายรายเซลส์</h2><div class="hint">เดือน ${esc(D.month)} — ใครขายเท่าไหร่ กี่เปอร์เซ็นต์ · แตะชื่อเพื่อดูรายงานผลงานคนนั้น</div>${sellersHtml(A.bySeller)}</div>`;
     h += peopleHtml();
     h += bookingsHtml();
+    h += marketingHtml();
 
     // ── 💳 เงินค้างเก็บ + 🏆 ลูกค้า ──
     h += '<div class="grid2">';
@@ -738,12 +746,13 @@ function bindPhase1() {
   document.querySelectorAll('[data-dseller]').forEach(el => el.onclick = () => openPerson(el.dataset.dseller));
   document.querySelectorAll('[data-dperson]').forEach(el => el.onclick = () => openPerson(el.dataset.dperson));
   document.querySelectorAll('[data-dbook]').forEach(el => el.onclick = () => bookingDrill(el.dataset.dbook));
+  document.querySelectorAll('[data-dmk]').forEach(el => el.onclick = () => marketingDrill(el.dataset.dmk));
   document.querySelectorAll('[data-oboard]').forEach(el => el.onclick = () => window.open(D.boardLink || '../board/', '_blank'));
   document.querySelectorAll('[data-dprodcard]').forEach(el => el.onclick = e => { e.stopPropagation(); prodDrill(); });
   document.querySelectorAll('[data-bucket]').forEach(el => el.onclick = () => {
     const id = el.dataset.bucket;
     openOrders(BUCKETS[id].icon + ' ' + BUCKETS[id].lbl + ' — ' + thMonth(MONTH),
-               FO().filter(o => splitMoney(o)[id] > 0), true, id);
+               FOA().filter(o => splitMoney(o)[id] > 0), true, id);
   });
   if ($('exAdd')) $('exAdd').onclick = () => openExpense(null);
   document.querySelectorAll('[data-dpayroll]').forEach(el => el.onclick = () => payrollDrill());
@@ -987,14 +996,61 @@ function bookingDrill(id) {
   $('dtMask').classList.add('on');
 }
 
+// ════════════════════════════════════════════════════════════
+//  📣 โปรเจกต์การตลาด — ของที่ส่งไปแลกดีล (สปอนเซอร์/แลกสื่อ/แจกชิม) ไม่ใช่ยอดขาย ไม่มีค่าคอม
+//  ตีมูลค่าตามราคาขายปกติ = รายได้ที่ยอมสละเพื่อแลกสิ่งที่ได้กลับมา (คุณปาล์มเคาะ 1ก 2ก 2026-09-04)
+// ════════════════════════════════════════════════════════════
+const MKS = () => (D && D.marketing && D.marketing.list) || [];
+function marketingHtml() {
+  const ls = MKS();
+  if (!ls.length) return '';
+  const M = D.marketing;
+  const row = p => `<div class="prow" data-dmk="${esc(p.id)}">
+      <div class="av" style="background:rgba(200,145,46,.15);color:var(--gold)">📣</div>
+      <div class="mid">
+        <div class="nm">${esc(p.name)}${p.type ? `<span class="pill p-gray">${esc(p.type)}</span>` : ''}${p.unknown ? '<span class="pill p-red">ไม่พบในทะเบียน</span>' : ''}${/^ปิด/.test(p.st) ? '<span class="pill p-gray">ปิดแล้ว</span>' : ''}</div>
+        <div class="sub">${p.got ? '🎁 ได้กลับมา: ' + esc(p.got) : 'ยังไม่ระบุว่าได้อะไรกลับมา'}${p.owner ? ' · ดูแลโดย ' + esc(p.owner) : ''}</div>
+        ${p.budget ? `<div class="track" style="height:7px;margin-top:6px;background:var(--raise);border-radius:99px;overflow:hidden"><div style="height:100%;width:${p.pct}%;background:${p.pct >= 100 ? 'var(--red)' : 'var(--gold)'};border-radius:99px"></div></div>
+        <div class="sub">ใช้ไป ${money(p.tQty)} จากงบ ${money(p.budget)} ลัง (${p.pct}%)</div>` : `<div class="sub">ส่งไปแล้วสะสม ${money(p.tQty)} ลัง · ${money(p.tValue)} บาท</div>`}
+      </div>
+      <div class="rt"><b>${money(p.mValue)}</b><span>บาท เดือนนี้ · ${money(p.mQty)} ลัง</span></div>
+    </div>`;
+  return `<div class="sec"><h2>📣 โปรเจกต์การตลาด${M.mValue ? ` <span class="pill p-gold">เดือนนี้ ${money(M.mValue)} บาท · ${money(M.mQty)} ลัง</span>` : ''}</h2>
+    <div class="hint">ของที่ส่งไปแลกดีล (สปอนเซอร์ / แลกสื่อ / แจกชิม) — <b>ไม่นับเป็นยอดขาย ไม่มีค่าคอม</b> ตีมูลค่าตามราคาขายปกติ · แตะดูออเดอร์ในโปรเจกต์</div>`
+    + ls.map(row).join('') + '</div>';
+}
+function marketingDrill(id) {
+  const p = MKS().find(x => x.id === id); if (!p) return;
+  const st = (lb, v, sub) => `<div class="pstat"><div class="lb">${lb}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  let h = `<div class="hint">${p.type ? esc(p.type) + ' · ' : ''}${p.partner ? 'คู่ค้า ' + esc(p.partner) + ' · ' : ''}${p.from ? esc(thDate(p.from)) + (p.to ? ' – ' + esc(thDate(p.to)) : '') + ' · ' : ''}สถานะ ${esc(p.st)} · รหัส ${esc(p.id)}</div>`;
+  if (p.unknown) h += '<div class="pill p-red" style="margin:6px 0">⚠️ ออเดอร์ติดป้ายรหัสนี้ แต่ไม่มีในทะเบียน MarketingProjects — ให้ทีมเพิ่มโปรเจกต์หรือแก้รหัสในออเดอร์</div>';
+  if (p.got) h += `<div class="pill p-gold" style="margin:6px 0;white-space:normal">🎁 สิ่งที่ได้กลับมา: ${esc(p.got)}</div>`;
+  h += '<div class="pstats">'
+    + st('เดือนนี้', money(p.mQty) + ' ลัง', 'มูลค่า ' + money(p.mValue) + ' บาท')
+    + st('สะสมทั้งโปรเจกต์', money(p.tQty) + ' ลัง', 'มูลค่า ' + money(p.tValue) + ' บาท')
+    + (p.budget ? st('งบที่ให้', money(p.budget) + ' ลัง', 'ใช้ไป ' + p.pct + '%' + (p.tQty > p.budget ? ' — เกินงบแล้ว' : '')) : '')
+    + '</div>';
+  h += '<div class="psec"><h4>📦 ออเดอร์ในโปรเจกต์</h4>';
+  h += p.ords.length ? '<div class="scroll"><table class="tb"><tr><th>วันที่</th><th>ส่งให้</th><th class="num">ลัง</th><th class="num">มูลค่า</th><th>สถานะ</th><th>คีย์โดย</th></tr>'
+    + p.ords.map(o => `<tr><td style="white-space:nowrap">${esc(thDate(o.d))}</td><td>${esc(o.cust || '—')}</td><td class="num"><b>${money(o.qty)}</b></td><td class="num">${money(o.value)}</td>
+        <td><span class="pill ${stPill(o.st + ' ' + o.dst)}">${esc(o.dst || o.st || '—')}</span></td><td style="font-size:.72rem;color:var(--sub)">${esc(o.seller || '—')}</td></tr>`).join('') + '</table></div>'
+    : '<div class="empty">ยังไม่มีออเดอร์ติดป้ายโปรเจกต์นี้</div>';
+  h += '</div>';
+  if (p.note) h += `<div class="hint" style="margin-top:10px">📝 ${esc(p.note)}</div>`;
+  h += '<div class="hint" style="margin-top:10px">กติกา: ของในโปรเจกต์ไม่นับยอดขายของเซลส์และไม่คิดค่าคอม — คนส่งของยังได้เครดิตงานส่งตามปกติ</div>';
+  $('dtTitle').textContent = '📣 ' + p.name;
+  $('dtBody').innerHTML = h;
+  $('dtMask').classList.add('on');
+}
+
 // ── 💵 หน้าการเงิน: เงินเข้าแยกก้อนตามที่บันทึกจริง + รายจ่ายแยกหมวด + สรุปสุทธิ ──
 function finHtml() {
   const B = {}; BK.forEach(k => B[k] = { amt: 0, n: 0 });
-  FO().forEach(o => {
+  FOA().forEach(o => {
     const s = splitMoney(o);
     BK.forEach(k => { if (s[k]) { B[k].amt += s[k]; B[k].n++; } });
   });
-  const total = BK.reduce((t, k) => t + B[k].amt, 0);
+  const total = FO().reduce((t, o) => t + o.amt, 0);
   const chip = id => {
     const c = BUCKETS[id], v = B[id];
     return `<div class="k" data-bucket="${id}" style="cursor:pointer" title="แตะดูรายการ">
@@ -1044,6 +1100,10 @@ function finHtml() {
         <td class="num"><b>${money(x.amt)}</b></td><td>${esc(x.ptype)}</td></tr>`).join('') + '</table></div>';
   } else {
     h += `<div class="empty" style="padding:14px">ยังไม่มีรายจ่ายบันทึกไว้เดือนนี้${isCeo() ? ' — เงินออกเมื่อไหร่ กดบันทึกไว้เลย จะได้เห็นกำไรจริง' : ''}</div>`;
+  }
+  const MKV = (D.marketing && D.marketing.mValue) || 0;
+  if (MKV) {
+    h += `<div class="hint" style="margin-top:8px;color:var(--gold)">📣 จ่ายเป็นของให้โปรเจกต์การตลาดเดือนนี้ <b>${money(MKV)}</b> บาท (${money(D.marketing.mQty)} ลัง ตีราคาขายปกติ) — ไม่ใช่เงินออกจากบัญชี จึงไม่หักในสุทธิ แต่คือรายได้ที่ยอมสละเพื่อแลกดีล</div>`;
   }
   if (P.due) {
     h += `<div class="hint" style="margin-top:8px;color:var(--red)">⏳ เงินเดือนงวดนี้ที่<b>ยังไม่จ่าย</b> ${money(P.due)} บาท (${P.list.filter(x => !x.paid).length} คน) — ยังไม่ถูกนับเป็นรายจ่าย จนกว่าจะกดจ่ายในหมวดพนักงาน</div>`;
@@ -1437,7 +1497,7 @@ function openOrders(title, os, showDate, bucket) {
   let h = `<div class="hint" style="margin-bottom:8px">รวม <b>${money(tot)}</b> บาท · ${money(totQ)} ลัง · ${os.length} รายการ${ONLY_DONE ? ' (เฉพาะส่งแล้ว)' : ''}</div>`;
   h += os.length ? '<div class="scroll"><table class="tb"><tr>' + (showDate ? '<th>วันที่</th>' : '') + '<th>ลูกค้า</th><th>สินค้า</th><th class="num">ลัง</th><th class="num">' + (bucket ? 'ยอดในก้อนนี้' : 'ยอด') + '</th><th>สถานะ</th></tr>' +
     os.map(o => `<tr>${showDate ? '<td style="white-space:nowrap">' + esc(o.d.slice(8) + '/' + o.d.slice(5, 7)) + '</td>' : ''}
-      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + (o.s0 ? ' (คีย์โดย ' + esc(o.s0) + ')' : '') + '</span>' : ''}${o.bk ? ' <span class="pill p-gold" style="font-size:9.5px">📦 งวดจากใบจอง</span>' : ''}</td>
+      <td>${esc(o.cust || '—')}</td><td>${esc(o.prod || '—')}${o.seller ? ' <span style="color:var(--faint);font-size:.7rem">· ' + esc(o.seller) + (o.s0 ? ' (คีย์โดย ' + esc(o.s0) + ')' : '') + '</span>' : ''}${o.bk ? ' <span class="pill p-gold" style="font-size:9.5px">📦 งวดจากใบจอง</span>' : ''}${o.mk ? ' <span class="pill p-gold" style="font-size:9.5px">📣 โปรเจกต์การตลาด · ไม่นับยอด</span>' : ''}</td>
       <td class="num">${money(o.qty)}</td><td class="num"><b>${money(val(o))}</b>${bucket && val(o) !== o.amt ? '<div style="font-size:.66rem;color:var(--faint)">ทั้งบิล ' + money(o.amt) + '</div>' : ''}</td>
       <td><span class="pill ${stPill(o.st)}">${esc(o.st || '—')}</span>${/unpaid|ค้าง/i.test(o.pay) ? ' <span class="pill p-red">ยังไม่จ่าย</span>' : ''}${o.ptype ? '<div style="font-size:.66rem;color:var(--faint);margin-top:2px">' + esc(o.ptype) + '</div>' : ''}</td></tr>`).join('') +
     '</table></div>' : '<div class="empty">ไม่มีออเดอร์</div>';
